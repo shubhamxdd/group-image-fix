@@ -12,7 +12,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | # | Feature | Phase | Status |
 |---|---------|-------|--------|
 | 1 | Offline vision architecture | Foundation | done |
-| 2 | Coding standards and tooling | Foundation | in-progress |
+| 2 | Coding standards and tooling | Foundation | done |
 | 3 | Gallery photo import and session state | Slice 1 | planned |
 | 4 | Face detection and person grouping | Slice 1 | planned |
 | 5 | Seamless face blend engine | Slice 1 | planned |
@@ -30,11 +30,11 @@ Decide the on device computer vision library, face landmark detector, and image 
 - [x] Verify it: `/check verify offline vision architecture`
 Spec [0001](../specs/0001-offline-vision-architecture/index.md)
 
-### 2. Coding standards and tooling · in-progress
+### 2. Coding standards and tooling · done
 Capture project conventions into root AGENTS.md and verify that lint and type checks run cleanly from the scaffolded project.
 **Done when:** root AGENTS.md reflects the real project conventions and lint and typecheck commands run clean.
 - [x] Capture conventions and tooling: `/audit`
-- [ ] Install and verify tooling: `/develop tooling`
+- [x] Install and verify tooling: `/develop tooling`
 
 ## Slice 1: Core face swap loop
 

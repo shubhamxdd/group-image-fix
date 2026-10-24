@@ -3,10 +3,12 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
-    "@expo/ui": "~57.0.25",
+    "@expo/ui": "~57.0.26",
     "@react-native-ml-kit/face-detection": "^2.0.1",
     "@shopify/react-native-skia": "2.6.2",
-    "expo": "~57.0.30",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~57.0.2",
+    "expo": "~57.0.31",
     "expo-asset": "~57.0.20",
     "expo-constants": "~57.0.22",
     "expo-device": "~57.0.2",
@@ -16,7 +18,7 @@
     "expo-image": "~57.0.5",
     "expo-linking": "~57.0.13",
     "expo-media-library": "~57.0.5",
-    "expo-router": "~57.0.28",
+    "expo-router": "~57.0.29",
     "expo-splash-screen": "~57.0.10",
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.3",
@@ -44,6 +46,16 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint"
+  },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "@react-native-ml-kit/face-detection",
+          "react-native-fast-tflite"
+        ]
+      }
+    }
   },
   "private": true
 }
