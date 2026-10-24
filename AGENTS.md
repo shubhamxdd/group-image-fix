@@ -1,4 +1,23 @@
-This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
+# img-gp
+
+An offline mobile app that detects faces across a burst of group photos and blends the best expressions seamlessly into one photo completely on device.
+
+## Stack
+
+- **Language / Runtime**: TypeScript, React Native 0.86, React 19.2, Expo SDK 57
+- **Framework**: Expo Router
+- **Key dependencies**: `@react-native-mlkit/face-detection`, `react-native-fast-tflite`, `@shopify/react-native-skia`, `expo-file-system`, `expo-media-library`
+- **Package manager**: npm / npx
+
+## Build approach
+
+Skateboard: ship the thinnest usable whole first, then grow it.
+
+## Specs
+
+Stored in `docs/specs/`. Format: `docs/specs/NNNN-title.md`.
+
+This is an Expo and React Native mobile application. Prioritize mobile first patterns, performance, and cross platform compatibility.
 
 ## Expo has changed — do not trust your training data
 
@@ -39,3 +58,5 @@ Docs: https://docs.expo.dev/eas/index.md
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
 - Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+
+_Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

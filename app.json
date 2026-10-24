@@ -32,6 +32,15 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
+      ],
+      "expo-asset",
+      "react-native-fast-tflite",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow img-gp to access your photos to select group photos and save blended results.",
+          "savePhotosPermission": "Allow img-gp to save the blended group photos to your library."
+        }
       ]
     ],
     "experiments": {
