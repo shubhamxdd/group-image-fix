@@ -6,6 +6,8 @@ Steps derived from spec 0002 acceptance criteria. `/check verify` runs these; `/
 - [x] `bunx tsc --noEmit` checks clean with zero type errors (covers AC-1, AC-4, AC-5, AC-6)
 - [x] `npx expo lint` checks clean with zero lint warnings or errors (covers AC-1 through AC-6)
 - [x] `npx expo-doctor` confirms dependencies and project configuration pass all checks
+- [x] `npx expo export --platform web` bundles cleanly and confirms index route renders without runtime exceptions
+- [x] `node --test` confirms Zustand session store lifecycle, generation token race protection, base photo switching, and cache cleanup (covers AC-6)
 
 ## Interactive Real Device / Simulator Verifications
 - [ ] AC-1: Tap "Select Group Photos", native system picker opens with multiple selection enabled up to 10 photos

@@ -47,7 +47,7 @@ Allow selecting 2 to 10 group photos from the local photo gallery and manage the
   - [x] Build the Zustand session store with status transitions and cache cleanup (AC-6)
   - [x] Build the image ingestion service with 1080p proxy generation and bounded concurrency (AC-4, AC-5)
   - [x] Implement the gallery picker component with count validation and cancellation UX (AC-1, AC-2, AC-3)
-- [ ] Verify it: `/check verify gallery photo import and session state`
+- [x] Verify it: `/check verify gallery photo import and session state`
 Spec [0002](../specs/0002-gallery-photo-import-session-state/index.md) · code in `src/`
 
 ### 4. Face detection and person grouping · needs a decision
