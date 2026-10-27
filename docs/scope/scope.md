@@ -60,7 +60,7 @@ Detect all faces in selected photos, extract facial landmarks and quality scores
   - [x] Implement in memory face crop embedding extraction with Skia and Fast TFLite (AC-3)
   - [x] Build bipartite matching person clustering engine (AC-4, AC-5)
   - [x] Wire detection pipeline into session store and update user interface (AC-6)
-- [ ] Verify it: `/check verify face detection and person grouping`
+- [x] Verify it: `/check verify face detection and person grouping`
 Spec [0003](../specs/0003-face-detection-person-grouping/index.md) · code in `src/`
 
 ### 5. Seamless face blend engine · needs a decision
