@@ -13,7 +13,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 |---|---------|-------|--------|
 | 1 | Offline vision architecture | Foundation | done |
 | 2 | Coding standards and tooling | Foundation | done |
-| 3 | Gallery photo import and session state | Slice 1 | planned |
+| 3 | Gallery photo import and session state | Slice 1 | in-progress |
 | 4 | Face detection and person grouping | Slice 1 | planned |
 | 5 | Seamless face blend engine | Slice 1 | planned |
 | 6 | Interactive editor and export | Slice 1 | planned |
@@ -38,10 +38,17 @@ Capture project conventions into root AGENTS.md and verify that lint and type ch
 
 ## Slice 1: Core face swap loop
 
-### 3. Gallery photo import and session state · needs a decision
-Allow selecting 3 to 8 group photos from the local photo gallery and manage the photo session state for processing.
-**Done when:** a user can pick multiple photos from their device library and see them loaded into memory with valid dimensions and file paths.
-- [ ] Design it (spec): `/architect gallery photo import and session state`
+### 3. Gallery photo import and session state · in-progress
+Allow selecting 2 to 10 group photos from the local photo gallery and manage the photo session state for processing.
+**Done when:** a user can pick between 2 and 10 photos from their device library and see them loaded with downscaled 1080p proxies and valid file paths.
+- [x] Design it (spec): `/architect gallery photo import and session state`
+- [x] Build it: `/develop gallery photo import and session state`
+  - [x] Install dependencies and define session and photo types (AC-1, AC-5, AC-6)
+  - [x] Build the Zustand session store with status transitions and cache cleanup (AC-6)
+  - [x] Build the image ingestion service with 1080p proxy generation and bounded concurrency (AC-4, AC-5)
+  - [x] Implement the gallery picker component with count validation and cancellation UX (AC-1, AC-2, AC-3)
+- [ ] Verify it: `/check verify gallery photo import and session state`
+Spec [0002](../specs/0002-gallery-photo-import-session-state/index.md) · code in `src/`
 
 ### 4. Face detection and person grouping · needs a decision
 Detect all faces in selected photos, extract facial landmarks and quality scores (eyes open, smiles), and cluster faces belonging to the same person.
