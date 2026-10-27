@@ -13,8 +13,8 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 |---|---------|-------|--------|
 | 1 | Offline vision architecture | Foundation | done |
 | 2 | Coding standards and tooling | Foundation | done |
-| 3 | Gallery photo import and session state | Slice 1 | in-progress |
-| 4 | Face detection and person grouping | Slice 1 | planned |
+| 3 | Gallery photo import and session state | Slice 1 | done |
+| 4 | Face detection and person grouping | Slice 1 | in-progress |
 | 5 | Seamless face blend engine | Slice 1 | planned |
 | 6 | Interactive editor and export | Slice 1 | planned |
 | 7 | Before and after comparison | Slice 2 | planned |
@@ -38,7 +38,7 @@ Capture project conventions into root AGENTS.md and verify that lint and type ch
 
 ## Slice 1: Core face swap loop
 
-### 3. Gallery photo import and session state · in-progress
+### 3. Gallery photo import and session state · done
 Allow selecting 2 to 10 group photos from the local photo gallery and manage the photo session state for processing.
 **Done when:** a user can pick between 2 and 10 photos from their device library and see them loaded with downscaled 1080p proxies and valid file paths.
 - [x] Design it (spec): `/architect gallery photo import and session state`
@@ -50,10 +50,18 @@ Allow selecting 2 to 10 group photos from the local photo gallery and manage the
 - [x] Verify it: `/check verify gallery photo import and session state`
 Spec [0002](../specs/0002-gallery-photo-import-session-state/index.md) · code in `src/`
 
-### 4. Face detection and person grouping · needs a decision
+### 4. Face detection and person grouping · in-progress
 Detect all faces in selected photos, extract facial landmarks and quality scores (eyes open, smiles), and cluster faces belonging to the same person.
 **Done when:** every photo has detected face bounds, each unique person is grouped across photos, and face quality scores are calculated offline.
-- [ ] Design it (spec): `/architect face detection and person grouping`
+- [x] Design it (spec): `/architect face detection and person grouping`
+- [ ] Build it: `/develop face detection and person grouping`
+  - [ ] Bundle MobileFaceNet TFLite model and define detection types (AC-3, AC-6)
+  - [ ] Implement face detection service with ML Kit and expression quality score formula (AC-1, AC-2)
+  - [ ] Implement in memory face crop embedding extraction with Skia and Fast TFLite (AC-3)
+  - [ ] Build bipartite matching person clustering engine (AC-4, AC-5)
+  - [ ] Wire detection pipeline into session store and update user interface (AC-6)
+- [ ] Verify it: `/check verify face detection and person grouping`
+Spec [0003](../specs/0003-face-detection-person-grouping/index.md)
 
 ### 5. Seamless face blend engine · needs a decision
 Align chosen faces from alternate shots and blend them seamlessly onto the base photo without visible cut lines or skin tone mismatches.
