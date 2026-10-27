@@ -60,6 +60,14 @@ export function useGalleryPicker() {
           status: "ready",
           basePhotoId: photos[0].id,
           photos,
+          detectedFaces: {},
+          persons: [],
+          detectionProgress: {
+            stage: "idle",
+            currentPhotoIndex: 0,
+            totalPhotos: 0,
+            errorMessage: null,
+          },
           errorMessage: null,
         };
 

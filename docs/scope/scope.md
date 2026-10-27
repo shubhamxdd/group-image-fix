@@ -54,14 +54,14 @@ Spec [0002](../specs/0002-gallery-photo-import-session-state/index.md) · code i
 Detect all faces in selected photos, extract facial landmarks and quality scores (eyes open, smiles), and cluster faces belonging to the same person.
 **Done when:** every photo has detected face bounds, each unique person is grouped across photos, and face quality scores are calculated offline.
 - [x] Design it (spec): `/architect face detection and person grouping`
-- [ ] Build it: `/develop face detection and person grouping`
-  - [ ] Bundle MobileFaceNet TFLite model and define detection types (AC-3, AC-6)
-  - [ ] Implement face detection service with ML Kit and expression quality score formula (AC-1, AC-2)
-  - [ ] Implement in memory face crop embedding extraction with Skia and Fast TFLite (AC-3)
-  - [ ] Build bipartite matching person clustering engine (AC-4, AC-5)
-  - [ ] Wire detection pipeline into session store and update user interface (AC-6)
+- [x] Build it: `/develop face detection and person grouping`
+  - [x] Bundle MobileFaceNet TFLite model and define detection types (AC-3, AC-6)
+  - [x] Implement face detection service with ML Kit and expression quality score formula (AC-1, AC-2)
+  - [x] Implement in memory face crop embedding extraction with Skia and Fast TFLite (AC-3)
+  - [x] Build bipartite matching person clustering engine (AC-4, AC-5)
+  - [x] Wire detection pipeline into session store and update user interface (AC-6)
 - [ ] Verify it: `/check verify face detection and person grouping`
-Spec [0003](../specs/0003-face-detection-person-grouping/index.md)
+Spec [0003](../specs/0003-face-detection-person-grouping/index.md) · code in `src/`
 
 ### 5. Seamless face blend engine · needs a decision
 Align chosen faces from alternate shots and blend them seamlessly onto the base photo without visible cut lines or skin tone mismatches.

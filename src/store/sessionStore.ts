@@ -1,6 +1,14 @@
 import { create } from "zustand";
 import * as FileSystem from "expo-file-system/legacy";
 import { Session } from "../types/session";
+import { DetectedFace, Person, DetectionProgress } from "../types/detection";
+
+export const initialDetectionProgress: DetectionProgress = {
+  stage: "idle",
+  currentPhotoIndex: 0,
+  totalPhotos: 0,
+  errorMessage: null,
+};
 
 interface SessionState {
   session: Session | null;
@@ -10,6 +18,13 @@ interface SessionState {
   setSessionReady: (session: Session, token: number) => boolean;
   setSessionError: (error: string, token: number) => boolean;
   setBasePhoto: (photoId: string) => void;
+  setDetectionProgress: (progress: Partial<DetectionProgress>) => void;
+  setDetectionResults: (
+    detectedFaces: Record<string, DetectedFace>,
+    persons: Person[],
+    token: number
+  ) => boolean;
+  setDetectionError: (error: string, token: number) => boolean;
   resetSession: () => Promise<void>;
 }
 
@@ -25,6 +40,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       status: "importing",
       basePhotoId: null,
       photos: [],
+      detectedFaces: {},
+      persons: [],
+      detectionProgress: initialDetectionProgress,
       errorMessage: null,
     };
     set({ session: newSession, activeToken: nextToken });
@@ -55,6 +73,68 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (current && current.status === "ready") {
       set({ session: { ...current, basePhotoId: photoId } });
     }
+  },
+
+  setDetectionProgress: (progress: Partial<DetectionProgress>) => {
+    const current = get().session;
+    if (current) {
+      set({
+        session: {
+          ...current,
+          detectionProgress: {
+            ...current.detectionProgress,
+            ...progress,
+          },
+        },
+      });
+    }
+  },
+
+  setDetectionResults: (
+    detectedFaces: Record<string, DetectedFace>,
+    persons: Person[],
+    token: number
+  ) => {
+    if (get().activeToken !== token) {
+      return false;
+    }
+    const current = get().session;
+    if (current) {
+      set({
+        session: {
+          ...current,
+          detectedFaces,
+          persons,
+          detectionProgress: {
+            stage: "done",
+            currentPhotoIndex: current.photos.length,
+            totalPhotos: current.photos.length,
+            errorMessage: null,
+          },
+        },
+      });
+    }
+    return true;
+  },
+
+  setDetectionError: (error: string, token: number) => {
+    if (get().activeToken !== token) {
+      return false;
+    }
+    const current = get().session;
+    if (current) {
+      set({
+        session: {
+          ...current,
+          detectionProgress: {
+            ...current.detectionProgress,
+            stage: "error",
+            errorMessage: error,
+          },
+        },
+      });
+    }
+    return true;
   },
 
   resetSession: async () => {

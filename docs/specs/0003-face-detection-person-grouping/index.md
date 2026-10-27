@@ -1,7 +1,7 @@
 # 0003. Face Detection and Person Grouping
 
 **Date**: 2026-10-28
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 

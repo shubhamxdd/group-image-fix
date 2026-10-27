@@ -1,3 +1,5 @@
+import { DetectedFace, Person, DetectionProgress } from "./detection";
+
 export interface Photo {
   id: string;
   originalUri: string;
@@ -17,5 +19,8 @@ export interface Session {
   status: SessionStatus;
   basePhotoId: string | null;
   photos: Photo[];
+  detectedFaces: Record<string, DetectedFace>;
+  persons: Person[];
+  detectionProgress: DetectionProgress;
   errorMessage: string | null;
 }
