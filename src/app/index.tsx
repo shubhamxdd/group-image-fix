@@ -11,7 +11,6 @@ import {
 import { Image } from "expo-image";
 import { useGalleryPicker } from "../hooks/useGalleryPicker";
 import { useSessionStore } from "../store/sessionStore";
-import { runFaceDetectionPipeline } from "../services/facePipelineService";
 import { Photo } from "../types/session";
 
 export default function Index() {
@@ -26,6 +25,9 @@ export default function Index() {
     if (!session || isProcessing) return;
     try {
       setIsProcessing(true);
+      const { runFaceDetectionPipeline } = await import(
+        "../services/facePipelineService"
+      );
       await runFaceDetectionPipeline(session.id, activeToken);
     } finally {
       setIsProcessing(false);

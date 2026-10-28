@@ -1,5 +1,4 @@
 import * as FileSystem from "expo-file-system/legacy";
-import { Skia } from "@shopify/react-native-skia";
 import { Photo } from "../types/session";
 import { DetectedFace } from "../types/detection";
 import { useSessionStore } from "../store/sessionStore";
@@ -53,24 +52,37 @@ export async function runFaceDetectionPipeline(
     });
 
     // Step 1: Detect faces across photos (concurrency limit = 2)
-    const detectedFacesNested = await mapWithConcurrency(
-      session.photos,
-      2,
-      async (photo: Photo, index: number) => {
-        // Abort check
-        if (useSessionStore.getState().activeToken !== token) {
-          throw new Error("Pipeline aborted: session token mismatch.");
+    let detectedFacesNested: DetectedFace[][];
+    try {
+      detectedFacesNested = await mapWithConcurrency(
+        session.photos,
+        2,
+        async (photo: Photo, index: number) => {
+          if (useSessionStore.getState().activeToken !== token) {
+            throw new Error("Pipeline aborted: session token mismatch.");
+          }
+
+          const faces = await detectFacesInPhoto(photo);
+
+          useSessionStore.getState().setDetectionProgress({
+            currentPhotoIndex: index + 1,
+          });
+
+          return faces;
         }
-
-        const faces = await detectFacesInPhoto(photo);
-
-        useSessionStore.getState().setDetectionProgress({
-          currentPhotoIndex: index + 1,
-        });
-
-        return faces;
+      );
+    } catch (detectErr: any) {
+      const errMsg = detectErr?.message || "";
+      if (
+        errMsg.includes("The package '@react-native-ml-kit/face-detection' doesn't seem to be linked") ||
+        errMsg.includes("NativeFaceDetection")
+      ) {
+        throw new Error(
+          "Native build required: Face detection requires an Expo development build (run 'npx expo run:android' or 'npx expo run:ios'). Expo Go does not bundle native ML Kit."
+        );
       }
-    );
+      throw detectErr;
+    }
 
     if (useSessionStore.getState().activeToken !== token) {
       return false;
@@ -83,7 +95,7 @@ export async function runFaceDetectionPipeline(
       return true;
     }
 
-    // Step 2: Extract embeddings for each face in memory via Skia
+    // Step 2: Extract embeddings for each face in memory via Skia if model is available
     store.setDetectionProgress({
       stage: "embedding",
       currentPhotoIndex: 0,
@@ -92,63 +104,78 @@ export async function runFaceDetectionPipeline(
 
     const model = await getOrLoadMobileFaceNetModel();
 
-    // Group faces by photo to load each photo Skia image only once
-    const facesByPhotoId = new Map<string, DetectedFace[]>();
-    for (const face of allFaces) {
-      const list = facesByPhotoId.get(face.photoId) || [];
-      list.push(face);
-      facesByPhotoId.set(face.photoId, list);
-    }
-
-    const photoMap = new Map<string, Photo>();
-    for (const p of session.photos) {
-      photoMap.set(p.id, p);
-    }
-
-    let processedFaceCount = 0;
-    for (const [photoId, photoFaces] of facesByPhotoId.entries()) {
-      if (useSessionStore.getState().activeToken !== token) {
-        return false;
+    if (model) {
+      // Dynamically load Skia to avoid top-level evaluation crashes
+      let SkiaApi: typeof import("@shopify/react-native-skia")["Skia"] | null = null;
+      try {
+        const skiaModule = await import("@shopify/react-native-skia");
+        SkiaApi = skiaModule.Skia;
+      } catch (skiaErr) {
+        console.warn("Skia module unavailable for embedding extraction:", skiaErr);
       }
 
-      const photo = photoMap.get(photoId);
-      if (!photo) continue;
-
-      try {
-        const fileData = await FileSystem.readAsStringAsync(photo.proxyUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        const skiaData = Skia.Data.fromBase64(fileData);
-        const skiaImage = Skia.Image.MakeImageFromEncoded(skiaData);
-
-        if (!skiaImage) {
-          console.warn("Could not decode Skia image from proxy:", photo.proxyUri);
-          continue;
+      if (SkiaApi) {
+        // Group faces by photo to load each photo Skia image only once
+        const facesByPhotoId = new Map<string, DetectedFace[]>();
+        for (const face of allFaces) {
+          const list = facesByPhotoId.get(face.photoId) || [];
+          list.push(face);
+          facesByPhotoId.set(face.photoId, list);
         }
 
-        for (const face of photoFaces) {
+        const photoMap = new Map<string, Photo>();
+        for (const p of session.photos) {
+          photoMap.set(p.id, p);
+        }
+
+        let processedFaceCount = 0;
+        for (const [photoId, photoFaces] of facesByPhotoId.entries()) {
           if (useSessionStore.getState().activeToken !== token) {
             return false;
           }
 
-          try {
-            const embedding = await extractFaceEmbeddingFromSkia(
-              skiaImage,
-              face.bounds,
-              model
-            );
-            face.embedding = embedding;
-          } catch (embErr) {
-            console.warn("Face embedding extraction error:", embErr);
-          }
+          const photo = photoMap.get(photoId);
+          if (!photo) continue;
 
-          processedFaceCount++;
-          useSessionStore.getState().setDetectionProgress({
-            currentPhotoIndex: processedFaceCount,
-          });
+          try {
+            const fileData = await FileSystem.readAsStringAsync(photo.proxyUri, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            const skiaData = SkiaApi.Data.fromBase64(fileData);
+            const skiaImage = SkiaApi.Image.MakeImageFromEncoded(skiaData);
+
+            if (!skiaImage) {
+              console.warn("Could not decode Skia image from proxy:", photo.proxyUri);
+              continue;
+            }
+
+            for (const face of photoFaces) {
+              if (useSessionStore.getState().activeToken !== token) {
+                return false;
+              }
+
+              try {
+                const embedding = await extractFaceEmbeddingFromSkia(
+                  skiaImage,
+                  face.bounds,
+                  model
+                );
+                if (embedding) {
+                  face.embedding = embedding;
+                }
+              } catch (embErr) {
+                console.warn("Face embedding extraction error:", embErr);
+              }
+
+              processedFaceCount++;
+              useSessionStore.getState().setDetectionProgress({
+                currentPhotoIndex: processedFaceCount,
+              });
+            }
+          } catch (imgErr) {
+            console.warn("Skia image load error for photo:", photoId, imgErr);
+          }
         }
-      } catch (imgErr) {
-        console.warn("Skia image load error for photo:", photoId, imgErr);
       }
     }
 
@@ -156,7 +183,7 @@ export async function runFaceDetectionPipeline(
       return false;
     }
 
-    // Step 3: Cluster faces into unique person identities
+    // Step 3: Cluster faces into unique person identities (bipartite matching with spatial fallback)
     store.setDetectionProgress({
       stage: "clustering",
     });

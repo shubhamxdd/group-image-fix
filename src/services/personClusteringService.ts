@@ -3,6 +3,24 @@ import { DetectedFace, Person } from "../types/detection";
 import { cosineSimilarity, computeCentroid } from "./faceEmbeddingService";
 
 const SIMILARITY_THRESHOLD = 0.65;
+const SPATIAL_SIMILARITY_THRESHOLD = 0.55;
+
+export function computeSpatialSimilarity(
+  a: DetectedFace,
+  b: DetectedFace
+): number {
+  const centerXA = a.bounds.x + a.bounds.width / 2;
+  const centerXB = b.bounds.x + b.bounds.width / 2;
+  const centerYA = a.bounds.y + a.bounds.height / 2;
+  const centerYB = b.bounds.y + b.bounds.height / 2;
+
+  const dx = Math.abs(centerXA - centerXB);
+  const dy = Math.abs(centerYA - centerYB);
+
+  // In burst photos, people remain in roughly the same relative spot
+  const score = Math.max(0, 1 - (dx * 2.5 + dy * 1.5));
+  return Number(score.toFixed(4));
+}
 
 interface InternalCluster {
   id: string;
@@ -17,6 +35,12 @@ export function clusterFacesIntoPersons(
 ): { persons: Person[]; updatedFaces: Record<string, DetectedFace> } {
   if (faces.length === 0) {
     return { persons: [], updatedFaces: {} };
+  }
+
+  // Create lookup for faces by ID early
+  const faceMap: Record<string, DetectedFace> = {};
+  for (const f of faces) {
+    faceMap[f.id] = { ...f };
   }
 
   // Group faces by photoId preserving photo sequence
@@ -40,17 +64,42 @@ export function clusterFacesIntoPersons(
 
   const clusters: InternalCluster[] = [];
 
+  function computePairSimilarity(
+    cluster: InternalCluster,
+    face: DetectedFace
+  ): number {
+    if (
+      cluster.representativeEmbedding.length > 0 &&
+      face.embedding &&
+      face.embedding.length > 0
+    ) {
+      return cosineSimilarity(cluster.representativeEmbedding, face.embedding);
+    }
+
+    // Fall back to spatial similarity using member faces
+    let maxSpatial = 0;
+    for (const memberId of cluster.faceIds) {
+      const member = faceMap[memberId];
+      if (member) {
+        const sim = computeSpatialSimilarity(member, face);
+        if (sim > maxSpatial) {
+          maxSpatial = sim;
+        }
+      }
+    }
+    return maxSpatial;
+  }
+
   // Iterate photo by photo
   for (const [, photoFaces] of facesByPhoto.entries()) {
     if (clusters.length === 0) {
       // First photo: every face initializes a person cluster
       for (const face of photoFaces) {
-        if (!face.embedding) continue;
         clusters.push({
           id: Crypto.randomUUID(),
           faceIds: [face.id],
-          embeddings: [face.embedding],
-          representativeEmbedding: face.embedding,
+          embeddings: face.embedding ? [face.embedding] : [],
+          representativeEmbedding: face.embedding || [],
         });
       }
       continue;
@@ -67,12 +116,15 @@ export function clusterFacesIntoPersons(
     for (let cIdx = 0; cIdx < clusters.length; cIdx++) {
       for (let fIdx = 0; fIdx < photoFaces.length; fIdx++) {
         const face = photoFaces[fIdx];
-        if (!face.embedding) continue;
-        const sim = cosineSimilarity(
-          clusters[cIdx].representativeEmbedding,
-          face.embedding
-        );
-        if (sim >= SIMILARITY_THRESHOLD) {
+        const sim = computePairSimilarity(clusters[cIdx], face);
+        const hasEmbedding =
+          clusters[cIdx].representativeEmbedding.length > 0 &&
+          !!face.embedding;
+        const threshold = hasEmbedding
+          ? SIMILARITY_THRESHOLD
+          : SPATIAL_SIMILARITY_THRESHOLD;
+
+        if (sim >= threshold) {
           pairs.push({ clusterIndex: cIdx, faceIndex: fIdx, similarity: sim });
         }
       }
@@ -109,21 +161,14 @@ export function clusterFacesIntoPersons(
     for (let fIdx = 0; fIdx < photoFaces.length; fIdx++) {
       if (!matchedFaces.has(fIdx)) {
         const face = photoFaces[fIdx];
-        if (!face.embedding) continue;
         clusters.push({
           id: Crypto.randomUUID(),
           faceIds: [face.id],
-          embeddings: [face.embedding],
-          representativeEmbedding: face.embedding,
+          embeddings: face.embedding ? [face.embedding] : [],
+          representativeEmbedding: face.embedding || [],
         });
       }
     }
-  }
-
-  // Create lookup for faces by ID
-  const faceMap: Record<string, DetectedFace> = {};
-  for (const f of faces) {
-    faceMap[f.id] = { ...f };
   }
 
   // Calculate sort key for each person cluster:
