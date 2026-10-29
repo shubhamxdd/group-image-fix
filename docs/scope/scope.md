@@ -14,7 +14,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 1 | Offline vision architecture | Foundation | done |
 | 2 | Coding standards and tooling | Foundation | done |
 | 3 | Gallery photo import and session state | Slice 1 | done |
-| 4 | Face detection and person grouping | Slice 1 | in-progress |
+| 4 | Face detection and person grouping | Slice 1 | done |
 | 5 | Seamless face blend engine | Slice 1 | planned |
 | 6 | Interactive editor and export | Slice 1 | planned |
 | 7 | Before and after comparison | Slice 2 | planned |
@@ -50,7 +50,7 @@ Allow selecting 2 to 10 group photos from the local photo gallery and manage the
 - [x] Verify it: `/check verify gallery photo import and session state`
 Spec [0002](../specs/0002-gallery-photo-import-session-state/index.md) · code in `src/`
 
-### 4. Face detection and person grouping · in-progress
+### 4. Face detection and person grouping · done
 Detect all faces in selected photos, extract facial landmarks and quality scores (eyes open, smiles), and cluster faces belonging to the same person.
 **Done when:** every photo has detected face bounds, each unique person is grouped across photos, and face quality scores are calculated offline.
 - [x] Design it (spec): `/architect face detection and person grouping`

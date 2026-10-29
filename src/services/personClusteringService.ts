@@ -2,8 +2,8 @@ import * as Crypto from "expo-crypto";
 import { DetectedFace, Person } from "../types/detection";
 import { cosineSimilarity, computeCentroid } from "./faceEmbeddingService";
 
-const SIMILARITY_THRESHOLD = 0.65;
-const SPATIAL_SIMILARITY_THRESHOLD = 0.55;
+export const DEFAULT_SIMILARITY_THRESHOLD = 0.52;
+export const DEFAULT_SPATIAL_SIMILARITY_THRESHOLD = 0.48;
 
 export function computeSpatialSimilarity(
   a: DetectedFace,
@@ -31,11 +31,21 @@ interface InternalCluster {
 
 export function clusterFacesIntoPersons(
   faces: DetectedFace[],
-  basePhotoId: string | null
+  basePhotoId: string | null,
+  options?: {
+    similarityThreshold?: number;
+    spatialThreshold?: number;
+  }
 ): { persons: Person[]; updatedFaces: Record<string, DetectedFace> } {
   if (faces.length === 0) {
     return { persons: [], updatedFaces: {} };
   }
+
+  const effectiveSimilarityThreshold =
+    options?.similarityThreshold ?? DEFAULT_SIMILARITY_THRESHOLD;
+  const effectiveSpatialThreshold =
+    options?.spatialThreshold ??
+    Math.max(0.4, effectiveSimilarityThreshold - 0.04);
 
   // Create lookup for faces by ID early
   const faceMap: Record<string, DetectedFace> = {};
@@ -73,7 +83,18 @@ export function clusterFacesIntoPersons(
       face.embedding &&
       face.embedding.length > 0
     ) {
-      return cosineSimilarity(cluster.representativeEmbedding, face.embedding);
+      const centroidSim = cosineSimilarity(
+        cluster.representativeEmbedding,
+        face.embedding
+      );
+      let maxMemberSim = 0;
+      for (const emb of cluster.embeddings) {
+        const sim = cosineSimilarity(emb, face.embedding);
+        if (sim > maxMemberSim) {
+          maxMemberSim = sim;
+        }
+      }
+      return Math.max(centroidSim, maxMemberSim);
     }
 
     // Fall back to spatial similarity using member faces
@@ -121,8 +142,8 @@ export function clusterFacesIntoPersons(
           clusters[cIdx].representativeEmbedding.length > 0 &&
           !!face.embedding;
         const threshold = hasEmbedding
-          ? SIMILARITY_THRESHOLD
-          : SPATIAL_SIMILARITY_THRESHOLD;
+          ? effectiveSimilarityThreshold
+          : effectiveSpatialThreshold;
 
         if (sim >= threshold) {
           pairs.push({ clusterIndex: cIdx, faceIndex: fIdx, similarity: sim });
@@ -167,6 +188,87 @@ export function clusterFacesIntoPersons(
           embeddings: face.embedding ? [face.embedding] : [],
           representativeEmbedding: face.embedding || [],
         });
+      }
+    }
+  }
+
+  // Second pass: post clustering merge
+  // If two clusters never appear in the same photo and meet the similarity threshold, merge them.
+  let mergedAny = true;
+  while (mergedAny) {
+    mergedAny = false;
+    for (let i = 0; i < clusters.length; i++) {
+      for (let j = i + 1; j < clusters.length; j++) {
+        const c1 = clusters[i];
+        const c2 = clusters[j];
+
+        const c1Photos = new Set(c1.faceIds.map((id) => faceMap[id]?.photoId));
+        let sharePhoto = false;
+        for (const id of c2.faceIds) {
+          const pId = faceMap[id]?.photoId;
+          if (pId && c1Photos.has(pId)) {
+            sharePhoto = true;
+            break;
+          }
+        }
+
+        if (sharePhoto) {
+          continue;
+        }
+
+        let sim = 0;
+        if (
+          c1.representativeEmbedding.length > 0 &&
+          c2.representativeEmbedding.length > 0
+        ) {
+          const centroidSim = cosineSimilarity(
+            c1.representativeEmbedding,
+            c2.representativeEmbedding
+          );
+          let maxMemberSim = 0;
+          for (const emb1 of c1.embeddings) {
+            for (const emb2 of c2.embeddings) {
+              const s = cosineSimilarity(emb1, emb2);
+              if (s > maxMemberSim) {
+                maxMemberSim = s;
+              }
+            }
+          }
+          sim = Math.max(centroidSim, maxMemberSim);
+        } else {
+          for (const id1 of c1.faceIds) {
+            for (const id2 of c2.faceIds) {
+              const f1 = faceMap[id1];
+              const f2 = faceMap[id2];
+              if (f1 && f2) {
+                const s = computeSpatialSimilarity(f1, f2);
+                if (s > sim) {
+                  sim = s;
+                }
+              }
+            }
+          }
+        }
+
+        const requiredThreshold =
+          c1.representativeEmbedding.length > 0 &&
+          c2.representativeEmbedding.length > 0
+            ? effectiveSimilarityThreshold
+            : effectiveSpatialThreshold;
+
+        if (sim >= requiredThreshold) {
+          c1.faceIds.push(...c2.faceIds);
+          c1.embeddings.push(...c2.embeddings);
+          if (c1.embeddings.length > 0) {
+            c1.representativeEmbedding = computeCentroid(c1.embeddings);
+          }
+          clusters.splice(j, 1);
+          mergedAny = true;
+          break;
+        }
+      }
+      if (mergedAny) {
+        break;
       }
     }
   }
@@ -230,11 +332,20 @@ export function clusterFacesIntoPersons(
       }
     }
 
+    const bestFace = info.bestFaceId ? faceMap[info.bestFaceId] : null;
+    const thumbnailUri =
+      bestFace?.cropUri ||
+      info.cluster.faceIds
+        .map((id) => faceMap[id]?.cropUri)
+        .find((uri) => !!uri) ||
+      undefined;
+
     return {
       id: personId,
       label: `Person ${idx + 1}`,
       faceIds: info.cluster.faceIds,
       bestFaceId: info.bestFaceId,
+      thumbnailUri,
       representativeEmbedding: info.cluster.representativeEmbedding,
     };
   });

@@ -1,11 +1,11 @@
 # 0003. Face Detection and Person Grouping
 
 **Date**: 2026-10-28
-**Status**: In Progress
+**Status**: Done
 
 ## Summary
 
-This feature runs offline face detection on all imported group photos, scores each face expression for open eyes and smiling, and groups faces belonging to the same person across shots using on device neural network embeddings. Detection runs on downscaled 1080p proxy images via Google ML Kit to keep memory usage low. Face crops are processed directly in memory using React Native Skia pixel buffers and a quantized MobileFaceNet model via fast TensorFlow Lite to generate 192 dimensional feature vectors. A photo by photo bipartite matching engine groups faces into distinct person identities by cosine similarity, identifying every unique person across the burst sequence.
+This feature runs offline face detection on all imported group photos, scores each face expression for open eyes and smiling, and groups faces belonging to the same person across shots using on device neural network embeddings. Detection runs on downscaled 1080p proxy images via Google ML Kit to keep memory usage low. Face crops are processed directly in memory using React Native Skia pixel buffers and a quantized MobileFaceNet model via fast TensorFlow Lite to generate 192 dimensional feature vectors. A photo by photo bipartite matching engine groups faces into distinct person identities by cosine similarity, identifying every unique person across the burst sequence. The system also supports real time sensitivity tuning via preset buttons (Group More, Balanced, Strict) and an interactive continuous sensitivity slider (0.35 to 0.75) with member pairwise matching and non co-occurrence cluster merging.
 
 ## Requirements
 

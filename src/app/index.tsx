@@ -17,7 +17,13 @@ export default function Index() {
   const { openPicker, isPicking, session, resetSession, setBasePhoto } =
     useGalleryPicker();
   const activeToken = useSessionStore((state) => state.activeToken);
+  const clusteringThreshold = useSessionStore(
+    (state) => state.clusteringThreshold
+  );
+  const reclusterPersons = useSessionStore((state) => state.reclusterPersons);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showSlider, setShowSlider] = useState(false);
+  const [sliderWidth, setSliderWidth] = useState(240);
 
   const isImporting = isPicking || session?.status === "importing";
 
@@ -130,13 +136,202 @@ export default function Index() {
         {isDone && (
           <View style={styles.personsCard}>
             <View style={styles.personsHeaderRow}>
-              <Text style={styles.personsTitle}>
-                👥 {session.persons.length} People Grouped
-              </Text>
+              <View>
+                <Text style={styles.personsTitle}>
+                  👥 {session.persons.length} People Grouped
+                </Text>
+                <Text style={styles.clusteringModeSubtitle}>
+                  {clusteringThreshold <= 0.46
+                    ? "Mode: Group More (Loose)"
+                    : clusteringThreshold >= 0.59
+                    ? "Mode: Strict Separation"
+                    : "Mode: Balanced"}
+                </Text>
+              </View>
               <Text style={styles.facesTotalCount}>
                 {Object.keys(session.detectedFaces).length} total faces
               </Text>
             </View>
+
+            {/* Quick preset buttons */}
+            <View style={styles.presetButtonsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.presetButton,
+                  clusteringThreshold <= 0.46 && styles.presetButtonActive,
+                ]}
+                onPress={() => reclusterPersons(0.44)}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.presetButtonText,
+                    clusteringThreshold <= 0.46 && styles.presetButtonTextActive,
+                  ]}
+                >
+                  Group More
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.presetButton,
+                  clusteringThreshold > 0.46 &&
+                    clusteringThreshold < 0.59 &&
+                    styles.presetButtonActive,
+                ]}
+                onPress={() => reclusterPersons(0.52)}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.presetButtonText,
+                    clusteringThreshold > 0.46 &&
+                      clusteringThreshold < 0.59 &&
+                      styles.presetButtonTextActive,
+                  ]}
+                >
+                  Balanced
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.presetButton,
+                  clusteringThreshold >= 0.59 && styles.presetButtonActive,
+                ]}
+                onPress={() => reclusterPersons(0.64)}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.presetButtonText,
+                    clusteringThreshold >= 0.59 && styles.presetButtonTextActive,
+                  ]}
+                >
+                  Strict
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.sliderToggleBtn,
+                  showSlider && styles.sliderToggleBtnActive,
+                ]}
+                onPress={() => setShowSlider(!showSlider)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.sliderToggleBtnText}>
+                  {showSlider ? "Hide Slider" : "Slider"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Expandable Advanced Slider */}
+            {showSlider && (
+              <View style={styles.sliderSection}>
+                <View style={styles.sliderHeaderRow}>
+                  <Text style={styles.sliderSectionLabel}>
+                    Sensitivity Threshold
+                  </Text>
+                  <View style={styles.sliderValueBadge}>
+                    <Text style={styles.sliderValueText}>
+                      {clusteringThreshold.toFixed(2)}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.sliderControlRow}>
+                  <TouchableOpacity
+                    style={styles.stepButton}
+                    onPress={() => {
+                      const next = Math.max(
+                        0.35,
+                        Math.round((clusteringThreshold - 0.02) * 100) / 100
+                      );
+                      reclusterPersons(next);
+                    }}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={styles.stepButtonText}>−</Text>
+                  </TouchableOpacity>
+
+                  <View
+                    style={styles.sliderTrackContainer}
+                    onLayout={(e) => {
+                      const w = e.nativeEvent.layout.width;
+                      if (w > 0) setSliderWidth(w);
+                    }}
+                    onStartShouldSetResponder={() => true}
+                    onMoveShouldSetResponder={() => true}
+                    onResponderGrant={(e) => {
+                      const x = e.nativeEvent.locationX;
+                      const ratio = Math.max(0, Math.min(1, x / sliderWidth));
+                      const val = 0.35 + ratio * (0.75 - 0.35);
+                      reclusterPersons(Math.round(val * 100) / 100);
+                    }}
+                    onResponderMove={(e) => {
+                      const x = e.nativeEvent.locationX;
+                      const ratio = Math.max(0, Math.min(1, x / sliderWidth));
+                      const val = 0.35 + ratio * (0.75 - 0.35);
+                      reclusterPersons(Math.round(val * 100) / 100);
+                    }}
+                  >
+                    <View style={styles.sliderTrackBackground} />
+                    <View
+                      style={[
+                        styles.sliderTrackFill,
+                        {
+                          width: `${Math.max(
+                            0,
+                            Math.min(
+                              100,
+                              ((clusteringThreshold - 0.35) / (0.75 - 0.35)) *
+                                100
+                            )
+                          )}%`,
+                        },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.sliderThumb,
+                        {
+                          left: `${Math.max(
+                            0,
+                            Math.min(
+                              100,
+                              ((clusteringThreshold - 0.35) / (0.75 - 0.35)) *
+                                100
+                            )
+                          )}%`,
+                        },
+                      ]}
+                    />
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.stepButton}
+                    onPress={() => {
+                      const next = Math.min(
+                        0.75,
+                        Math.round((clusteringThreshold + 0.02) * 100) / 100
+                      );
+                      reclusterPersons(next);
+                    }}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={styles.stepButtonText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.sliderFooterRow}>
+                  <Text style={styles.sliderFooterHint}>0.35 (Merge)</Text>
+                  <Text style={styles.sliderFooterHint}>0.75 (Separate)</Text>
+                </View>
+              </View>
+            )}
+
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {session.persons.map((person) => {
                 const bestFace = person.bestFaceId
@@ -556,6 +751,149 @@ const styles = StyleSheet.create({
   facesTotalCount: {
     color: "#94a3b8",
     fontSize: 12,
+  },
+  clusteringModeSubtitle: {
+    color: "#38bdf8",
+    fontSize: 11,
+    marginTop: 2,
+    fontWeight: "500",
+  },
+  presetButtonsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+    gap: 6,
+  },
+  presetButton: {
+    flex: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: "#0f172a",
+    borderWidth: 1,
+    borderColor: "#334155",
+    alignItems: "center",
+  },
+  presetButtonActive: {
+    backgroundColor: "#0284c7",
+    borderColor: "#38bdf8",
+  },
+  presetButtonText: {
+    color: "#94a3b8",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  presetButtonTextActive: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  sliderToggleBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: "#1e293b",
+    borderWidth: 1,
+    borderColor: "#475569",
+    alignItems: "center",
+  },
+  sliderToggleBtnActive: {
+    backgroundColor: "#334155",
+    borderColor: "#38bdf8",
+  },
+  sliderToggleBtnText: {
+    color: "#cbd5e1",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  sliderSection: {
+    backgroundColor: "#0f172a",
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#1e293b",
+  },
+  sliderHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  sliderSectionLabel: {
+    color: "#cbd5e1",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  sliderValueBadge: {
+    backgroundColor: "#0284c7",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  sliderValueText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  sliderControlRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  stepButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#1e293b",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#334155",
+  },
+  stepButtonText: {
+    color: "#f1f5f9",
+    fontSize: 15,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+  sliderTrackContainer: {
+    flex: 1,
+    height: 32,
+    justifyContent: "center",
+    position: "relative",
+  },
+  sliderTrackBackground: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#334155",
+    width: "100%",
+  },
+  sliderTrackFill: {
+    position: "absolute",
+    left: 0,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#38bdf8",
+  },
+  sliderThumb: {
+    position: "absolute",
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#ffffff",
+    borderWidth: 2,
+    borderColor: "#0284c7",
+    marginLeft: -10,
+    elevation: 3,
+  },
+  sliderFooterRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 4,
+  },
+  sliderFooterHint: {
+    color: "#64748b",
+    fontSize: 10,
   },
   personPill: {
     backgroundColor: "#0f172a",

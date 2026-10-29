@@ -11,12 +11,12 @@ Steps derived from spec 0003 acceptance criteria. `/check verify` runs these; `/
 - [x] Model bundle check: `assets/models/mobilefacenet.tflite` is present and registered via `metro.config.js` (covers AC-3)
 
 ## Interactive Real Device / Simulator Verifications
-- [ ] AC-1: Tap "Detect Faces & Group People" in an active session, ML Kit detects all faces and produces normalized coordinates
-- [ ] AC-2: Expression quality scores display on person cards and highlight smiling faces with open eyes
-- [ ] AC-3: MobileFaceNet processes face crops in memory via Skia and extracts 192 dimensional feature vectors
-- [ ] AC-4: Alternate shots of the same person are clustered into the same person identity
-- [ ] AC-5: People are labeled Person 1, Person 2, and so on from left to right across the group
-- [ ] AC-6: Session UI updates with detected face count badges on thumbnails, person chips, and honors session reset cancellation
+- [x] AC-1: Tap "Detect Faces & Group People" in an active session, ML Kit detects all faces and produces normalized coordinates
+- [x] AC-2: Expression quality scores display on person cards and highlight smiling faces with open eyes
+- [x] AC-3: MobileFaceNet processes face crops in memory via Skia and extracts 192 dimensional feature vectors
+- [x] AC-4: Alternate shots of the same person are clustered into the same person identity with real time sensitivity slider and presets
+- [x] AC-5: People are labeled Person 1, Person 2, and so on from left to right across the group with cropped face avatars
+- [x] AC-6: Session UI updates with detected face count badges on thumbnails, person chips, and honors session reset cancellation
 
 ## Acceptance criteria coverage
 - AC-1 covered by faceDetectionService with accurate landmark mode and normalized coordinates

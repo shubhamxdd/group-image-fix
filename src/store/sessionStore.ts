@@ -2,6 +2,10 @@ import { create } from "zustand";
 import * as FileSystem from "expo-file-system/legacy";
 import { Session } from "../types/session";
 import { DetectedFace, Person, DetectionProgress } from "../types/detection";
+import {
+  clusterFacesIntoPersons,
+  DEFAULT_SIMILARITY_THRESHOLD,
+} from "../services/personClusteringService";
 
 export const initialDetectionProgress: DetectionProgress = {
   stage: "idle",
@@ -13,6 +17,7 @@ export const initialDetectionProgress: DetectionProgress = {
 interface SessionState {
   session: Session | null;
   activeToken: number;
+  clusteringThreshold: number;
 
   startImport: (sessionId: string) => { sessionId: string; token: number };
   setSessionReady: (session: Session, token: number) => boolean;
@@ -25,12 +30,15 @@ interface SessionState {
     token: number
   ) => boolean;
   setDetectionError: (error: string, token: number) => boolean;
+  setClusteringThreshold: (threshold: number) => void;
+  reclusterPersons: (threshold?: number) => void;
   resetSession: () => Promise<void>;
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   session: null,
   activeToken: 0,
+  clusteringThreshold: DEFAULT_SIMILARITY_THRESHOLD,
 
   startImport: (sessionId: string) => {
     const nextToken = get().activeToken + 1;
@@ -71,6 +79,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   setBasePhoto: (photoId: string) => {
     const current = get().session;
     if (current && current.status === "ready") {
+      const faceList = Object.values(current.detectedFaces);
+      if (faceList.length > 0 && current.detectionProgress.stage === "done") {
+        const { persons, updatedFaces } = clusterFacesIntoPersons(
+          faceList,
+          photoId,
+          { similarityThreshold: get().clusteringThreshold }
+        );
+        set({
+          session: {
+            ...current,
+            basePhotoId: photoId,
+            detectedFaces: updatedFaces,
+            persons,
+          },
+        });
+        return;
+      }
       set({ session: { ...current, basePhotoId: photoId } });
     }
   },
@@ -135,6 +160,40 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       });
     }
     return true;
+  },
+
+  setClusteringThreshold: (threshold: number) => {
+    set({ clusteringThreshold: threshold });
+  },
+
+  reclusterPersons: (threshold?: number) => {
+    const targetThreshold = threshold ?? get().clusteringThreshold;
+    const current = get().session;
+    if (!current || !current.detectedFaces) {
+      set({ clusteringThreshold: targetThreshold });
+      return;
+    }
+
+    const faceList = Object.values(current.detectedFaces);
+    if (faceList.length === 0) {
+      set({ clusteringThreshold: targetThreshold });
+      return;
+    }
+
+    const { persons, updatedFaces } = clusterFacesIntoPersons(
+      faceList,
+      current.basePhotoId,
+      { similarityThreshold: targetThreshold }
+    );
+
+    set({
+      clusteringThreshold: targetThreshold,
+      session: {
+        ...current,
+        detectedFaces: updatedFaces,
+        persons,
+      },
+    });
   },
 
   resetSession: async () => {

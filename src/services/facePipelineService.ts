@@ -189,9 +189,11 @@ export async function runFaceDetectionPipeline(
       stage: "clustering",
     });
 
+    const currentThreshold = useSessionStore.getState().clusteringThreshold;
     const { persons, updatedFaces } = clusterFacesIntoPersons(
       allFaces,
-      session.basePhotoId
+      session.basePhotoId,
+      { similarityThreshold: currentThreshold }
     );
 
     // Step 4: Generate crisp face crop thumbnails for each person
