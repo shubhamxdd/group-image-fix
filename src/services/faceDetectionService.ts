@@ -78,6 +78,50 @@ export function normalizePoint(
   };
 }
 
+export function calculateIoU(a: NormalizedRect, b: NormalizedRect): number {
+  const xA = Math.max(a.x, b.x);
+  const yA = Math.max(a.y, b.y);
+  const xB = Math.min(a.x + a.width, b.x + b.width);
+  const yB = Math.min(a.y + a.height, b.y + b.height);
+
+  const interW = Math.max(0, xB - xA);
+  const interH = Math.max(0, yB - yA);
+  const intersectionArea = interW * interH;
+  if (intersectionArea <= 0) return 0;
+
+  const areaA = a.width * a.height;
+  const areaB = b.width * b.height;
+  const unionArea = areaA + areaB - intersectionArea;
+
+  const overlapA = intersectionArea / (areaA || 1);
+  const overlapB = intersectionArea / (areaB || 1);
+
+  return Math.max(intersectionArea / (unionArea || 1), Math.max(overlapA, overlapB));
+}
+
+export function filterOverlappingFaces(faces: DetectedFace[]): DetectedFace[] {
+  if (faces.length <= 1) return faces;
+
+  const sorted = [...faces].sort((a, b) => b.qualityScore - a.qualityScore);
+  const kept: DetectedFace[] = [];
+
+  for (const candidate of sorted) {
+    let duplicate = false;
+    for (const approved of kept) {
+      const iou = calculateIoU(candidate.bounds, approved.bounds);
+      if (iou > 0.35) {
+        duplicate = true;
+        break;
+      }
+    }
+    if (!duplicate) {
+      kept.push(candidate);
+    }
+  }
+
+  return kept;
+}
+
 export async function detectFacesInPhoto(photo: Photo): Promise<DetectedFace[]> {
   const rawFaces = await FaceDetection.detect(photo.proxyUri, DETECTION_OPTIONS);
 
@@ -142,5 +186,9 @@ export async function detectFacesInPhoto(photo: Photo): Promise<DetectedFace[]> 
     return detectedFace;
   });
 
-  return faces;
+  const filtered = filterOverlappingFaces(faces);
+  console.log(
+    `[FaceDetection] Photo ${photo.id}: raw faces = ${rawFaces.length}, filtered faces = ${filtered.length}`
+  );
+  return filtered;
 }

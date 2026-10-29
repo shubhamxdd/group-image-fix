@@ -141,9 +141,9 @@ export default function Index() {
                   👥 {session.persons.length} People Grouped
                 </Text>
                 <Text style={styles.clusteringModeSubtitle}>
-                  {clusteringThreshold <= 0.46
+                  {clusteringThreshold <= 0.35
                     ? "Mode: Group More (Loose)"
-                    : clusteringThreshold >= 0.59
+                    : clusteringThreshold >= 0.5
                     ? "Mode: Strict Separation"
                     : "Mode: Balanced"}
                 </Text>
@@ -158,15 +158,15 @@ export default function Index() {
               <TouchableOpacity
                 style={[
                   styles.presetButton,
-                  clusteringThreshold <= 0.46 && styles.presetButtonActive,
+                  clusteringThreshold <= 0.35 && styles.presetButtonActive,
                 ]}
-                onPress={() => reclusterPersons(0.44)}
+                onPress={() => reclusterPersons(0.3)}
                 activeOpacity={0.7}
               >
                 <Text
                   style={[
                     styles.presetButtonText,
-                    clusteringThreshold <= 0.46 && styles.presetButtonTextActive,
+                    clusteringThreshold <= 0.35 && styles.presetButtonTextActive,
                   ]}
                 >
                   Group More
@@ -176,18 +176,18 @@ export default function Index() {
               <TouchableOpacity
                 style={[
                   styles.presetButton,
-                  clusteringThreshold > 0.46 &&
-                    clusteringThreshold < 0.59 &&
+                  clusteringThreshold > 0.35 &&
+                    clusteringThreshold < 0.5 &&
                     styles.presetButtonActive,
                 ]}
-                onPress={() => reclusterPersons(0.52)}
+                onPress={() => reclusterPersons(0.42)}
                 activeOpacity={0.7}
               >
                 <Text
                   style={[
                     styles.presetButtonText,
-                    clusteringThreshold > 0.46 &&
-                      clusteringThreshold < 0.59 &&
+                    clusteringThreshold > 0.35 &&
+                      clusteringThreshold < 0.5 &&
                       styles.presetButtonTextActive,
                   ]}
                 >
@@ -198,15 +198,15 @@ export default function Index() {
               <TouchableOpacity
                 style={[
                   styles.presetButton,
-                  clusteringThreshold >= 0.59 && styles.presetButtonActive,
+                  clusteringThreshold >= 0.5 && styles.presetButtonActive,
                 ]}
-                onPress={() => reclusterPersons(0.64)}
+                onPress={() => reclusterPersons(0.58)}
                 activeOpacity={0.7}
               >
                 <Text
                   style={[
                     styles.presetButtonText,
-                    clusteringThreshold >= 0.59 && styles.presetButtonTextActive,
+                    clusteringThreshold >= 0.5 && styles.presetButtonTextActive,
                   ]}
                 >
                   Strict
@@ -246,7 +246,7 @@ export default function Index() {
                     style={styles.stepButton}
                     onPress={() => {
                       const next = Math.max(
-                        0.35,
+                        0.15,
                         Math.round((clusteringThreshold - 0.02) * 100) / 100
                       );
                       reclusterPersons(next);
@@ -267,13 +267,13 @@ export default function Index() {
                     onResponderGrant={(e) => {
                       const x = e.nativeEvent.locationX;
                       const ratio = Math.max(0, Math.min(1, x / sliderWidth));
-                      const val = 0.35 + ratio * (0.75 - 0.35);
+                      const val = 0.15 + ratio * (0.75 - 0.15);
                       reclusterPersons(Math.round(val * 100) / 100);
                     }}
                     onResponderMove={(e) => {
                       const x = e.nativeEvent.locationX;
                       const ratio = Math.max(0, Math.min(1, x / sliderWidth));
-                      const val = 0.35 + ratio * (0.75 - 0.35);
+                      const val = 0.15 + ratio * (0.75 - 0.15);
                       reclusterPersons(Math.round(val * 100) / 100);
                     }}
                   >
@@ -286,7 +286,7 @@ export default function Index() {
                             0,
                             Math.min(
                               100,
-                              ((clusteringThreshold - 0.35) / (0.75 - 0.35)) *
+                              ((clusteringThreshold - 0.15) / (0.75 - 0.15)) *
                                 100
                             )
                           )}%`,
@@ -301,7 +301,7 @@ export default function Index() {
                             0,
                             Math.min(
                               100,
-                              ((clusteringThreshold - 0.35) / (0.75 - 0.35)) *
+                              ((clusteringThreshold - 0.15) / (0.75 - 0.15)) *
                                 100
                             )
                           )}%`,
@@ -326,8 +326,8 @@ export default function Index() {
                 </View>
 
                 <View style={styles.sliderFooterRow}>
-                  <Text style={styles.sliderFooterHint}>0.35 (Merge)</Text>
-                  <Text style={styles.sliderFooterHint}>0.75 (Separate)</Text>
+                  <Text style={styles.sliderFooterHint}>0.15 (Merge More)</Text>
+                  <Text style={styles.sliderFooterHint}>0.75 (Separate More)</Text>
                 </View>
               </View>
             )}

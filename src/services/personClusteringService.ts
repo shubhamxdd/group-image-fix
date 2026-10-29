@@ -1,9 +1,10 @@
 import * as Crypto from "expo-crypto";
 import { DetectedFace, Person } from "../types/detection";
 import { cosineSimilarity, computeCentroid } from "./faceEmbeddingService";
+import { calculateIoU } from "./faceDetectionService";
 
-export const DEFAULT_SIMILARITY_THRESHOLD = 0.52;
-export const DEFAULT_SPATIAL_SIMILARITY_THRESHOLD = 0.48;
+export const DEFAULT_SIMILARITY_THRESHOLD = 0.42;
+export const DEFAULT_SPATIAL_SIMILARITY_THRESHOLD = 0.35;
 
 export function computeSpatialSimilarity(
   a: DetectedFace,
@@ -17,8 +18,8 @@ export function computeSpatialSimilarity(
   const dx = Math.abs(centerXA - centerXB);
   const dy = Math.abs(centerYA - centerYB);
 
-  // In burst photos, people remain in roughly the same relative spot
-  const score = Math.max(0, 1 - (dx * 2.5 + dy * 1.5));
+  // In burst photos, allow natural handheld camera framing drift
+  const score = Math.max(0, 1 - (dx * 1.8 + dy * 1.2));
   return Number(score.toFixed(4));
 }
 
@@ -45,7 +46,7 @@ export function clusterFacesIntoPersons(
     options?.similarityThreshold ?? DEFAULT_SIMILARITY_THRESHOLD;
   const effectiveSpatialThreshold =
     options?.spatialThreshold ??
-    Math.max(0.4, effectiveSimilarityThreshold - 0.04);
+    Math.max(0.2, effectiveSimilarityThreshold - 0.08);
 
   // Create lookup for faces by ID early
   const faceMap: Record<string, DetectedFace> = {};
@@ -202,17 +203,27 @@ export function clusterFacesIntoPersons(
         const c1 = clusters[i];
         const c2 = clusters[j];
 
-        const c1Photos = new Set(c1.faceIds.map((id) => faceMap[id]?.photoId));
-        let sharePhoto = false;
+        const c1PhotoFaceMap = new Map<string, string>();
+        for (const id of c1.faceIds) {
+          const f = faceMap[id];
+          if (f) c1PhotoFaceMap.set(f.photoId, id);
+        }
+
+        let shareDistinctFacePhoto = false;
         for (const id of c2.faceIds) {
-          const pId = faceMap[id]?.photoId;
-          if (pId && c1Photos.has(pId)) {
-            sharePhoto = true;
-            break;
+          const f2 = faceMap[id];
+          if (!f2) continue;
+          const matchId = c1PhotoFaceMap.get(f2.photoId);
+          if (matchId) {
+            const f1 = faceMap[matchId];
+            if (f1 && calculateIoU(f1.bounds, f2.bounds) < 0.25) {
+              shareDistinctFacePhoto = true;
+              break;
+            }
           }
         }
 
-        if (sharePhoto) {
+        if (shareDistinctFacePhoto) {
           continue;
         }
 

@@ -109,6 +109,7 @@ export async function runFaceDetectionPipeline(
     });
 
     const model = await getOrLoadMobileFaceNetModel();
+    console.log("[DetectionPipeline] Model loaded:", !!model);
 
     if (model) {
       // Dynamically load Skia to avoid top-level evaluation crashes

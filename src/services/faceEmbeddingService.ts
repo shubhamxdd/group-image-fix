@@ -12,15 +12,17 @@ export async function getOrLoadMobileFaceNetModel(): Promise<TfliteModel | null>
   if (!modelLoadPromise) {
     modelLoadPromise = (async () => {
       try {
+        console.log("[EmbeddingService] Loading Fast-TFLite model...");
         const { loadTensorflowModel } = await import("react-native-fast-tflite");
         // In Expo, local assets with metro tflite resolver can be loaded via require
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const modelSource = require("../../assets/models/mobilefacenet.tflite");
         const model = await loadTensorflowModel(modelSource, []);
+        console.log("[EmbeddingService] Model loaded successfully:", !!model);
         cachedModel = model;
         return model;
       } catch (err) {
-        console.warn("MobileFaceNet Fast-TFLite native module is not available:", err);
+        console.warn("[EmbeddingService] Failed to load MobileFaceNet model:", err);
         return null;
       }
     })();
@@ -110,6 +112,7 @@ export async function extractFaceEmbeddingFromSkia(
     const rawBytes = snapshot.readPixels();
 
     if (!rawBytes) {
+      console.warn("[EmbeddingService] snapshot.readPixels() returned null or empty");
       return null;
     }
 
@@ -122,14 +125,24 @@ export async function extractFaceEmbeddingFromSkia(
       floatInput[floatIdx++] = (rawBytes[i + 2] - 127.5) / 128;
     }
 
-    const outputs = await tflite.run([floatInput.buffer]);
+    const inputBuffer = floatInput.buffer.slice(
+      floatInput.byteOffset,
+      floatInput.byteOffset + floatInput.byteLength
+    );
+    const outputs = await tflite.run([inputBuffer]);
     if (!outputs || outputs.length === 0) {
+      console.warn("[EmbeddingService] tflite.run returned no outputs");
       return null;
     }
 
     const rawEmbedding = new Float32Array(outputs[0]);
     const embeddingArray = Array.from(rawEmbedding);
-    return l2Normalize(embeddingArray);
+    const norm = l2Normalize(embeddingArray);
+    console.log(
+      "[EmbeddingService] Extracted embedding successfully, length:",
+      norm.length
+    );
+    return norm;
   } catch (err) {
     console.warn("Could not extract face embedding with Skia/TFLite:", err);
     return null;
