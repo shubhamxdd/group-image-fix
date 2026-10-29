@@ -40,6 +40,7 @@ export interface Person {
   label: string;
   faceIds: string[];
   bestFaceId: string | null;
+  thumbnailUri?: string;
   representativeEmbedding: number[];
 }
 

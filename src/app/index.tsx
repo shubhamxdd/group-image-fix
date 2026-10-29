@@ -146,9 +146,26 @@ export default function Index() {
                   ? Math.round(bestFace.qualityScore * 100)
                   : null;
 
+                const thumbnail =
+                  person.thumbnailUri || bestFace?.cropUri;
+
                 return (
                   <View key={person.id} style={styles.personPill}>
                     <Text style={styles.personLabel}>{person.label}</Text>
+
+                    {thumbnail ? (
+                      <Image
+                        source={{ uri: thumbnail }}
+                        style={styles.personAvatar}
+                        contentFit="cover"
+                        transition={150}
+                      />
+                    ) : (
+                      <View style={styles.personAvatarPlaceholder}>
+                        <Text style={styles.avatarPlaceholderText}>👤</Text>
+                      </View>
+                    )}
+
                     <Text style={styles.personCount}>
                       {person.faceIds.length} shots
                     </Text>
@@ -543,29 +560,53 @@ const styles = StyleSheet.create({
   personPill: {
     backgroundColor: "#0f172a",
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginRight: 8,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginRight: 10,
     borderWidth: 1,
     borderColor: "#334155",
     alignItems: "center",
+    minWidth: 84,
   },
   personLabel: {
     color: "#f1f5f9",
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  personAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#1e293b",
+    borderWidth: 2,
+    borderColor: "#38bdf8",
+    marginBottom: 6,
+  },
+  personAvatarPlaceholder: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#1e293b",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: "#475569",
+  },
+  avatarPlaceholderText: {
+    fontSize: 22,
   },
   personCount: {
     color: "#94a3b8",
     fontSize: 10,
-    marginTop: 2,
+    marginBottom: 4,
   },
   scoreBadge: {
     backgroundColor: "#0284c7",
     paddingHorizontal: 6,
-    paddingVertical: 1,
+    paddingVertical: 2,
     borderRadius: 4,
-    marginTop: 4,
   },
   scoreText: {
     color: "#ffffff",

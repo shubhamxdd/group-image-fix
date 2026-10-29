@@ -1,4 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy";
+import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import { Photo } from "../types/session";
 import { DetectedFace } from "../types/detection";
 import { useSessionStore } from "../store/sessionStore";
@@ -95,6 +96,11 @@ export async function runFaceDetectionPipeline(
       return true;
     }
 
+    const photoMap = new Map<string, Photo>();
+    for (const p of session.photos) {
+      photoMap.set(p.id, p);
+    }
+
     // Step 2: Extract embeddings for each face in memory via Skia if model is available
     store.setDetectionProgress({
       stage: "embedding",
@@ -121,11 +127,6 @@ export async function runFaceDetectionPipeline(
           const list = facesByPhotoId.get(face.photoId) || [];
           list.push(face);
           facesByPhotoId.set(face.photoId, list);
-        }
-
-        const photoMap = new Map<string, Photo>();
-        for (const p of session.photos) {
-          photoMap.set(p.id, p);
         }
 
         let processedFaceCount = 0;
@@ -193,7 +194,53 @@ export async function runFaceDetectionPipeline(
       session.basePhotoId
     );
 
-    // Step 4: Save results to session store
+    // Step 4: Generate crisp face crop thumbnails for each person
+    for (const person of persons) {
+      if (!person.bestFaceId) continue;
+      const face = updatedFaces[person.bestFaceId];
+      if (!face) continue;
+      const photo = photoMap.get(face.photoId);
+      if (!photo) continue;
+
+      const marginX = face.bounds.width * 0.15;
+      const marginY = face.bounds.height * 0.15;
+
+      const originX = Math.max(
+        0,
+        Math.round((face.bounds.x - marginX) * photo.proxyWidth)
+      );
+      const originY = Math.max(
+        0,
+        Math.round((face.bounds.y - marginY) * photo.proxyHeight)
+      );
+      const cropW = Math.min(
+        photo.proxyWidth - originX,
+        Math.round((face.bounds.width + marginX * 2) * photo.proxyWidth)
+      );
+      const cropH = Math.min(
+        photo.proxyHeight - originY,
+        Math.round((face.bounds.height + marginY * 2) * photo.proxyHeight)
+      );
+
+      if (cropW > 10 && cropH > 10) {
+        try {
+          const cropResult = await manipulateAsync(
+            photo.proxyUri,
+            [
+              { crop: { originX, originY, width: cropW, height: cropH } },
+              { resize: { width: 140, height: 140 } },
+            ],
+            { compress: 0.85, format: SaveFormat.JPEG }
+          );
+          person.thumbnailUri = cropResult.uri;
+          face.cropUri = cropResult.uri;
+        } catch (cropErr) {
+          console.warn("Could not generate person thumbnail:", person.label, cropErr);
+        }
+      }
+    }
+
+    // Step 5: Save results to session store
     const applied = store.setDetectionResults(updatedFaces, persons, token);
     return applied;
   } catch (err: any) {
