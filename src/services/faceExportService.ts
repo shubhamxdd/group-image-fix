@@ -1,5 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy";
-import * as MediaLibrary from "expo-media-library";
+import * as MediaLibrary from "expo-media-library/legacy";
 import type { SkImage } from "@shopify/react-native-skia";
 import { Session, Photo } from "../types/session";
 import { DetectedFace } from "../types/detection";
@@ -20,6 +20,31 @@ async function loadSkiaImageFromUri(uri: string): Promise<SkImage | null> {
   }
 }
 
+async function saveToGallery(filePath: string): Promise<string> {
+  // 1. Try legacy API first
+  try {
+    const asset = await MediaLibrary.createAssetAsync(filePath);
+    if (asset?.uri) {
+      return asset.uri;
+    }
+  } catch (legacyErr) {
+    console.warn("Legacy createAssetAsync failed, attempting new class-based API:", legacyErr);
+  }
+
+  // 2. Fallback to new class-based MediaLibrary.Asset.create API
+  try {
+    const nextMediaLibrary = await import("expo-media-library");
+    if (nextMediaLibrary.Asset && typeof nextMediaLibrary.Asset.create === "function") {
+      const asset = await nextMediaLibrary.Asset.create(filePath);
+      return (asset as any)?.uri || (asset as any)?.id || filePath;
+    }
+  } catch (nextErr) {
+    console.warn("Class-based Asset.create failed:", nextErr);
+  }
+
+  throw new Error("Could not save photo to device media library.");
+}
+
 export interface ExportResult {
   success: boolean;
   assetUri?: string;
@@ -27,8 +52,10 @@ export interface ExportResult {
 }
 
 export async function exportFullResolutionComposite(
-  session: Session
+  session: Session,
+  onProgress?: (progress: number, stage: string) => void
 ): Promise<ExportResult> {
+  onProgress?.(10, "Checking media library permissions...");
   const basePhoto = session.photos.find((p) => p.id === session.basePhotoId);
   if (!basePhoto) {
     return { success: false, error: "No base photo selected in active session." };
@@ -48,8 +75,10 @@ export async function exportFullResolutionComposite(
   // If no swaps were performed, save original base photo directly
   if (swapList.length === 0) {
     try {
-      const asset = await MediaLibrary.createAssetAsync(basePhoto.originalUri);
-      return { success: true, assetUri: asset.uri };
+      onProgress?.(70, "Saving original base photo to gallery...");
+      const savedUri = await saveToGallery(basePhoto.originalUri);
+      onProgress?.(100, "Saved photo successfully!");
+      return { success: true, assetUri: savedUri };
     } catch (saveErr: any) {
       return {
         success: false,
@@ -59,6 +88,7 @@ export async function exportFullResolutionComposite(
   }
 
   try {
+    onProgress?.(25, "Loading full resolution base photo...");
     const {
       Skia,
       BlendMode,
@@ -119,7 +149,11 @@ export async function exportFullResolutionComposite(
       }
     `);
 
+    let swapIdx = 0;
     for (const swap of swapList) {
+      swapIdx++;
+      const currentPct = 30 + Math.round((swapIdx / swapList.length) * 45);
+      onProgress?.(currentPct, `Blending face expression ${swapIdx} of ${swapList.length}...`);
       const donorFace = session.detectedFaces[swap.donorFaceId];
       const baseFace = baseFacesByPerson.get(swap.personId);
       const donorPhoto = photoMap.get(swap.donorPhotoId);
@@ -206,6 +240,7 @@ export async function exportFullResolutionComposite(
       canvas.restore();
     }
 
+    onProgress?.(80, "Encoding full resolution image...");
     surface.flush();
     const snapshot = surface.makeImageSnapshot();
     const base64Data = snapshot.encodeToBase64(ImageFormat.JPEG, 95);
@@ -215,7 +250,8 @@ export async function exportFullResolutionComposite(
       encoding: FileSystem.EncodingType.Base64,
     });
 
-    const asset = await MediaLibrary.createAssetAsync(exportFilePath);
+    onProgress?.(92, "Saving to photo gallery...");
+    const savedUri = await saveToGallery(exportFilePath);
 
     // Clean up temporary export file
     try {
@@ -224,7 +260,8 @@ export async function exportFullResolutionComposite(
       console.warn("Could not delete temporary export file:", cleanupErr);
     }
 
-    return { success: true, assetUri: asset.uri };
+    onProgress?.(100, "Saved successfully!");
+    return { success: true, assetUri: savedUri };
   } catch (err: any) {
     console.warn("Full resolution export failed:", err);
     return {

@@ -197,11 +197,8 @@ export async function runFaceDetectionPipeline(
       { similarityThreshold: currentThreshold }
     );
 
-    // Step 4: Generate crisp face crop thumbnails for each person
-    for (const person of persons) {
-      if (!person.bestFaceId) continue;
-      const face = updatedFaces[person.bestFaceId];
-      if (!face) continue;
+    // Step 4: Generate crisp face crop thumbnails for all detected faces and persons
+    for (const face of Object.values(updatedFaces)) {
       const photo = photoMap.get(face.photoId);
       if (!photo) continue;
 
@@ -235,11 +232,17 @@ export async function runFaceDetectionPipeline(
             ],
             { compress: 0.85, format: SaveFormat.JPEG }
           );
-          person.thumbnailUri = cropResult.uri;
           face.cropUri = cropResult.uri;
         } catch (cropErr) {
-          console.warn("Could not generate person thumbnail:", person.label, cropErr);
+          console.warn("Could not generate face thumbnail:", face.id, cropErr);
         }
+      }
+    }
+
+    // Set person thumbnailUri to their bestFace thumbnail
+    for (const person of persons) {
+      if (person.bestFaceId && updatedFaces[person.bestFaceId]?.cropUri) {
+        person.thumbnailUri = updatedFaces[person.bestFaceId].cropUri;
       }
     }
 

@@ -21,6 +21,7 @@ interface SessionState {
   session: Session | null;
   activeToken: number;
   clusteringThreshold: number;
+  blendSequenceToken: number;
 
   startImport: (sessionId: string) => { sessionId: string; token: number };
   setSessionReady: (session: Session, token: number) => boolean;
@@ -46,6 +47,7 @@ interface SessionState {
     personId: string,
     params: Partial<BlendParameters>
   ) => Promise<BlendResult | null>;
+  renamePerson: (personId: string, newName: string) => void;
   resetSession: () => Promise<void>;
 }
 
@@ -53,6 +55,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   session: null,
   activeToken: 0,
   clusteringThreshold: DEFAULT_SIMILARITY_THRESHOLD,
+  blendSequenceToken: 0,
 
   startImport: (sessionId: string) => {
     const nextToken = get().activeToken + 1;
@@ -270,7 +273,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       [personId]: selection,
     };
 
+    const callToken = get().blendSequenceToken + 1;
     set({
+      blendSequenceToken: callToken,
       session: {
         ...current,
         swaps: updatedSwaps,
@@ -283,15 +288,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       updatedSwaps
     );
 
-    const activeSession = get().session;
-    if (activeSession && activeSession.id === current.id) {
-      set({
-        session: {
-          ...activeSession,
-          activeBlendPreviewUri: blendResult?.previewUri ?? null,
-          isBlending: false,
-        },
-      });
+    if (get().blendSequenceToken === callToken) {
+      const activeSession = get().session;
+      if (activeSession && activeSession.id === current.id) {
+        const previewWithCacheBuster = blendResult?.previewUri
+          ? `${blendResult.previewUri}?t=${Date.now()}`
+          : null;
+        set({
+          session: {
+            ...activeSession,
+            activeBlendPreviewUri: previewWithCacheBuster,
+            isBlending: false,
+          },
+        });
+      }
     }
 
     return blendResult;
@@ -306,7 +316,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const updatedSwaps = { ...current.swaps };
     delete updatedSwaps[personId];
 
+    const callToken = get().blendSequenceToken + 1;
     set({
+      blendSequenceToken: callToken,
       session: {
         ...current,
         swaps: updatedSwaps,
@@ -319,18 +331,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       updatedSwaps
     );
 
-    const activeSession = get().session;
-    if (activeSession && activeSession.id === current.id) {
-      const hasActiveSwaps = Object.keys(updatedSwaps).length > 0;
-      set({
-        session: {
-          ...activeSession,
-          activeBlendPreviewUri: hasActiveSwaps
-            ? blendResult?.previewUri ?? null
-            : null,
-          isBlending: false,
-        },
-      });
+    if (get().blendSequenceToken === callToken) {
+      const activeSession = get().session;
+      if (activeSession && activeSession.id === current.id) {
+        const hasActiveSwaps = Object.keys(updatedSwaps).length > 0;
+        const previewWithCacheBuster =
+          hasActiveSwaps && blendResult?.previewUri
+            ? `${blendResult.previewUri}?t=${Date.now()}`
+            : null;
+        set({
+          session: {
+            ...activeSession,
+            activeBlendPreviewUri: previewWithCacheBuster,
+            isBlending: false,
+          },
+        });
+      }
     }
 
     return blendResult;
@@ -341,7 +357,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (!current) {
       return;
     }
+    const callToken = get().blendSequenceToken + 1;
     set({
+      blendSequenceToken: callToken,
       session: {
         ...current,
         swaps: {},
@@ -374,7 +392,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       [personId]: updatedSelection,
     };
 
+    const callToken = get().blendSequenceToken + 1;
     set({
+      blendSequenceToken: callToken,
       session: {
         ...current,
         swaps: updatedSwaps,
@@ -387,18 +407,41 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       updatedSwaps
     );
 
-    const activeSession = get().session;
-    if (activeSession && activeSession.id === current.id) {
-      set({
-        session: {
-          ...activeSession,
-          activeBlendPreviewUri: blendResult?.previewUri ?? null,
-          isBlending: false,
-        },
-      });
+    if (get().blendSequenceToken === callToken) {
+      const activeSession = get().session;
+      if (activeSession && activeSession.id === current.id) {
+        const previewWithCacheBuster = blendResult?.previewUri
+          ? `${blendResult.previewUri}?t=${Date.now()}`
+          : null;
+        set({
+          session: {
+            ...activeSession,
+            activeBlendPreviewUri: previewWithCacheBuster,
+            isBlending: false,
+          },
+        });
+      }
     }
 
     return blendResult;
+  },
+
+  renamePerson: (personId: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    const current = get().session;
+    if (!current) return;
+
+    const updatedPersons = current.persons.map((p) =>
+      p.id === personId ? { ...p, label: trimmed } : p
+    );
+
+    set({
+      session: {
+        ...current,
+        persons: updatedPersons,
+      },
+    });
   },
 
   resetSession: async () => {

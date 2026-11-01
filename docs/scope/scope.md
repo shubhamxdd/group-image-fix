@@ -16,7 +16,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 3 | Gallery photo import and session state | Slice 1 | done |
 | 4 | Face detection and person grouping | Slice 1 | done |
 | 5 | Seamless face blend engine | Slice 1 | done |
-| 6 | Interactive editor and export | Slice 1 | planned |
+| 6 | Interactive editor and export | Slice 1 | in-progress |
 | 7 | Before and after comparison | Slice 2 | planned |
 | 8 | Built in burst camera | Slice 2 | planned |
 
@@ -77,10 +77,19 @@ Align chosen faces from alternate shots and blend them seamlessly onto the base 
 - [x] Verify it: `/check verify seamless face blend engine`
 Spec [0004](../specs/0004-seamless-face-blend-engine/index.md) · code in `src/services/`
 
-### 6. Interactive editor and export · needs a decision
+### 6. Interactive editor and export · in-progress
 Display the composite photo with tap targets over each person to pick alternative faces, and save the final image back to the photo gallery.
 **Done when:** users can tap any person, switch their face using a thumbnail strip, see updates, and export the high resolution result to their photo library.
-- [ ] Design it (spec): `/architect interactive editor and export`
+- [x] Design it (spec): `/architect interactive editor and export`
+- [x] Build it: `/develop interactive editor and export`
+  - [x] Enable editor navigation from session overview and create editor route (AC-1)
+  - [x] Build composite canvas with letterbox projected face indicator rings (AC-2)
+  - [x] Build face switcher drawer with expression ratings and selection controls (AC-3)
+  - [x] Wire preview re-rendering with sequencing and cache buster (AC-4)
+  - [x] Implement hold to compare gesture and overlay hiding (AC-5)
+  - [x] Implement export modal with milestone progress and gallery saving (AC-6)
+- [ ] Verify it: `/check verify interactive editor and export`
+Spec [0005](../specs/0005-interactive-editor-export/index.md) · code in src/app/editor.tsx, src/components/
 
 ## Slice 2: Comparison and burst capture
 

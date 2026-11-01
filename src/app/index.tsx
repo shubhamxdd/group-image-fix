@@ -7,8 +7,11 @@ import {
   ActivityIndicator,
   FlatList,
   ScrollView,
+  Modal,
+  TextInput,
 } from "react-native";
 import { Image } from "expo-image";
+import { router } from "expo-router";
 import { useGalleryPicker } from "../hooks/useGalleryPicker";
 import { useSessionStore } from "../store/sessionStore";
 import { Photo } from "../types/session";
@@ -21,9 +24,12 @@ export default function Index() {
     (state) => state.clusteringThreshold
   );
   const reclusterPersons = useSessionStore((state) => state.reclusterPersons);
+  const renamePerson = useSessionStore((state) => state.renamePerson);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSlider, setShowSlider] = useState(false);
   const [sliderWidth, setSliderWidth] = useState(240);
+  const [renamingPerson, setRenamingPerson] = useState<{ id: string; label: string } | null>(null);
+  const [renameInput, setRenameInput] = useState("");
 
   const isImporting = isPicking || session?.status === "importing";
 
@@ -345,8 +351,21 @@ export default function Index() {
                   person.thumbnailUri || bestFace?.cropUri;
 
                 return (
-                  <View key={person.id} style={styles.personPill}>
-                    <Text style={styles.personLabel}>{person.label}</Text>
+                  <TouchableOpacity
+                    key={person.id}
+                    style={styles.personPill}
+                    onPress={() => {
+                      setRenamingPerson({ id: person.id, label: person.label });
+                      setRenameInput(person.label);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.personLabelRow}>
+                      <Text style={styles.personLabel} numberOfLines={1}>
+                        {person.label}
+                      </Text>
+                      <Text style={styles.personEditIcon}>✏️</Text>
+                    </View>
 
                     {thumbnail ? (
                       <Image
@@ -371,7 +390,7 @@ export default function Index() {
                         </Text>
                       </View>
                     )}
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </ScrollView>
@@ -453,15 +472,69 @@ export default function Index() {
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={styles.disabledActionButton}
-              disabled={true}
+              style={styles.primaryActionButton}
+              onPress={() => router.push("/editor")}
+              activeOpacity={0.8}
             >
-              <Text style={styles.disabledActionText}>
-                Next: Face Blend Engine (Feature 5)
+              <Text style={styles.primaryActionText}>
+                ✨ Open Expression Editor
               </Text>
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Rename Person Modal */}
+        <Modal
+          visible={!!renamingPerson}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setRenamingPerson(null)}
+        >
+          <View style={styles.renameBackdrop}>
+            <View style={styles.renameCard}>
+              <Text style={styles.renameTitle}>Rename Person</Text>
+              <Text style={styles.renameSubtitle}>
+                Give this person a recognizable name like Rahul or Mom.
+              </Text>
+              <TextInput
+                style={styles.renameInput}
+                value={renameInput}
+                onChangeText={setRenameInput}
+                placeholder="e.g. Rahul, Priya, Dad"
+                placeholderTextColor="#64748b"
+                autoFocus
+                selectTextOnFocus
+                maxLength={30}
+                returnKeyType="done"
+                onSubmitEditing={() => {
+                  if (renamingPerson && renameInput.trim()) {
+                    renamePerson(renamingPerson.id, renameInput.trim());
+                  }
+                  setRenamingPerson(null);
+                }}
+              />
+              <View style={styles.renameButtonRow}>
+                <TouchableOpacity
+                  style={styles.renameCancelBtn}
+                  onPress={() => setRenamingPerson(null)}
+                >
+                  <Text style={styles.renameCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.renameSaveBtn}
+                  onPress={() => {
+                    if (renamingPerson && renameInput.trim()) {
+                      renamePerson(renamingPerson.id, renameInput.trim());
+                    }
+                    setRenamingPerson(null);
+                  }}
+                >
+                  <Text style={styles.renameSaveText}>Save Name</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     );
   }
@@ -1051,5 +1124,80 @@ const styles = StyleSheet.create({
     color: "#64748b",
     fontSize: 15,
     fontWeight: "600",
+  },
+  personLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  personEditIcon: {
+    fontSize: 10,
+  },
+  renameBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(2, 6, 23, 0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  renameCard: {
+    backgroundColor: "#0f172a",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.25)",
+    padding: 20,
+    width: "100%",
+    maxWidth: 340,
+  },
+  renameTitle: {
+    color: "#f8fafc",
+    fontSize: 17,
+    fontWeight: "700",
+  },
+  renameSubtitle: {
+    color: "#94a3b8",
+    fontSize: 13,
+    marginTop: 4,
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  renameInput: {
+    backgroundColor: "#1e293b",
+    color: "#ffffff",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.3)",
+    marginBottom: 18,
+  },
+  renameButtonRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+  },
+  renameCancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 6,
+    backgroundColor: "#334155",
+  },
+  renameCancelText: {
+    color: "#e2e8f0",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  renameSaveBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    backgroundColor: "#0284c7",
+  },
+  renameSaveText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "700",
   },
 });

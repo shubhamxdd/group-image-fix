@@ -12,6 +12,12 @@ export default function RootLayout() {
           headerTitleStyle: { fontWeight: "700" },
         }}
       />
+      <Stack.Screen
+        name="editor"
+        options={{
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 }
