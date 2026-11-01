@@ -80,7 +80,9 @@ export function transferLabColor(
   donorBoundsCount: number,
   baseRgba: Uint8Array,
   baseBoundsCount: number,
-  strength = 0.85
+  strength = 0.85,
+  cropWidth?: number,
+  cropHeight?: number
 ): Uint8Array {
   // Extract LAB values from sample arrays
   const donorL: number[] = [];
@@ -134,10 +136,26 @@ export function transferLabColor(
     const targetA = (origA - statsDonorA.mean) * ratioA + statsBaseA.mean;
     const targetB = (origB - statsDonorB.mean) * ratioB + statsBaseB.mean;
 
-    // Blend between original and target based on strength factor
-    const finalL = origL + (targetL - origL) * strength;
-    const finalA = origA + (targetA - origA) * strength;
-    const finalB = origB + (targetB - origB) * strength;
+    // Apply edge boundary smoothing so the patch blends seamlessly into the donor canvas
+    let pixelStrength = strength;
+    if (cropWidth && cropHeight && cropWidth > 0 && cropHeight > 0) {
+      const x = pxIdx % cropWidth;
+      const y = Math.floor(pxIdx / cropWidth);
+      const distEdgeX = Math.min(x, cropWidth - 1 - x);
+      const distEdgeY = Math.min(y, cropHeight - 1 - y);
+      const edgeDist = Math.min(distEdgeX, distEdgeY);
+      const featherPx = Math.max(4, Math.round(Math.min(cropWidth, cropHeight) * 0.15));
+
+      if (edgeDist < featherPx) {
+        const t = edgeDist / featherPx;
+        pixelStrength = strength * (t * t * (3 - 2 * t));
+      }
+    }
+
+    // Blend between original and target based on smoothed strength factor
+    const finalL = origL + (targetL - origL) * pixelStrength;
+    const finalA = origA + (targetA - origA) * pixelStrength;
+    const finalB = origB + (targetB - origB) * pixelStrength;
 
     const [r, g, b] = labToRgb(finalL, finalA, finalB);
 
@@ -204,7 +222,10 @@ export async function matchFaceToneWithSkia(
       donorPixels instanceof Uint8Array ? donorPixels : new Uint8Array(donorPixels),
       dW * dH,
       basePixels instanceof Uint8Array ? basePixels : new Uint8Array(basePixels),
-      bW * bH
+      bW * bH,
+      0.85,
+      dW,
+      dH
     );
 
     // Create an SkImage from the adjusted patch

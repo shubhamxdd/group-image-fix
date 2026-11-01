@@ -231,3 +231,67 @@ export function getPixelAffineMatrix(
     1,
   ];
 }
+
+export interface BlendMaskGeometry {
+  centerX: number;
+  centerY: number;
+  radiusX: number;
+  radiusY: number;
+  rotationAngle: number;
+  featherRadius: number;
+}
+
+export function computeBlendMaskGeometry(
+  baseFace: DetectedFace,
+  canvasW: number,
+  canvasH: number,
+  featherRadiusSetting = 0.35
+): BlendMaskGeometry {
+  const landmarks = baseFace.landmarks;
+  let centerX = (baseFace.bounds.x + baseFace.bounds.width / 2) * canvasW;
+  let centerY = (baseFace.bounds.y + baseFace.bounds.height / 2) * canvasH;
+  let rotationAngle = ((baseFace.headEulerAngleZ || 0) * Math.PI) / 180;
+
+  if (landmarks?.leftEye && landmarks?.rightEye) {
+    const leftX = landmarks.leftEye.x * canvasW;
+    const leftY = landmarks.leftEye.y * canvasH;
+    const rightX = landmarks.rightEye.x * canvasW;
+    const rightY = landmarks.rightEye.y * canvasH;
+
+    const eyeDx = rightX - leftX;
+    const eyeDy = rightY - leftY;
+    rotationAngle = Math.atan2(eyeDy, eyeDx);
+
+    const eyeMidX = (leftX + rightX) / 2;
+    const eyeMidY = (leftY + rightY) / 2;
+
+    let lowerX = eyeMidX;
+    let lowerY = eyeMidY + baseFace.bounds.height * canvasH * 0.35;
+
+    if (landmarks.mouthLeft && landmarks.mouthRight) {
+      lowerX = ((landmarks.mouthLeft.x + landmarks.mouthRight.x) / 2) * canvasW;
+      lowerY = ((landmarks.mouthLeft.y + landmarks.mouthRight.y) / 2) * canvasH;
+    } else if (landmarks.nose) {
+      lowerX = landmarks.nose.x * canvasW;
+      lowerY = landmarks.nose.y * canvasH;
+    }
+
+    centerX = eyeMidX * 0.45 + lowerX * 0.55;
+    centerY = eyeMidY * 0.45 + lowerY * 0.55;
+  }
+
+  // Tighten to inner facial contour (cheeks, forehead below hairline, jaw)
+  // so original hair, ears, and neck remain unclipped.
+  const radiusX = baseFace.bounds.width * 0.44 * canvasW;
+  const radiusY = baseFace.bounds.height * 0.50 * canvasH;
+  const featherRadius = Math.max(0.15, Math.min(0.55, featherRadiusSetting));
+
+  return {
+    centerX,
+    centerY,
+    radiusX,
+    radiusY,
+    rotationAngle,
+    featherRadius,
+  };
+}

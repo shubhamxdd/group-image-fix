@@ -3,7 +3,7 @@ import * as MediaLibrary from "expo-media-library/legacy";
 import type { SkImage } from "@shopify/react-native-skia";
 import { Session, Photo } from "../types/session";
 import { DetectedFace } from "../types/detection";
-import { getPixelAffineMatrix } from "./faceAlignmentService";
+import { getPixelAffineMatrix, computeBlendMaskGeometry } from "./faceAlignmentService";
 import { matchFaceToneWithSkia } from "./faceColorMatchService";
 
 async function loadSkiaImageFromUri(uri: string): Promise<SkImage | null> {
@@ -131,10 +131,18 @@ export async function exportFullResolutionComposite(
     const maskEffect = Skia.RuntimeEffect.Make(`
       uniform vec2 uCenter;
       uniform vec2 uRadii;
+      uniform float uAngle;
       uniform float uFeather;
 
       vec4 main(vec2 xy) {
-        vec2 d = (xy - uCenter) / uRadii;
+        vec2 delta = xy - uCenter;
+        float cosA = cos(-uAngle);
+        float sinA = sin(-uAngle);
+        vec2 rotatedDelta = vec2(
+          delta.x * cosA - delta.y * sinA,
+          delta.x * sinA + delta.y * cosA
+        );
+        vec2 d = rotatedDelta / uRadii;
         float dist = length(d);
         if (dist >= 1.0) {
           return vec4(0.0);
@@ -192,14 +200,12 @@ export async function exportFullResolutionComposite(
 
       const skiaMatrix = Skia.Matrix(pixelMatrixValues);
 
-      const targetCenterX =
-        (baseFace.bounds.x + baseFace.bounds.width / 2) * origW;
-      const targetCenterY =
-        (baseFace.bounds.y + baseFace.bounds.height / 2) * origH;
-
-      const radiusX = (baseFace.bounds.width * 0.58) * origW;
-      const radiusY = (baseFace.bounds.height * 0.68) * origH;
-      const featherRadius = Math.max(0.1, Math.min(0.5, swap.blendParams.featherRadius));
+      const maskGeom = computeBlendMaskGeometry(
+        baseFace,
+        origW,
+        origH,
+        swap.blendParams.featherRadius ?? 0.35
+      );
 
       canvas.saveLayer();
 
@@ -213,28 +219,36 @@ export async function exportFullResolutionComposite(
 
       if (maskEffect) {
         const maskShader = maskEffect.makeShader([
-          targetCenterX,
-          targetCenterY,
-          radiusX,
-          radiusY,
-          featherRadius,
+          maskGeom.centerX,
+          maskGeom.centerY,
+          maskGeom.radiusX,
+          maskGeom.radiusY,
+          maskGeom.rotationAngle,
+          maskGeom.featherRadius,
         ]);
         if (maskShader) {
           maskPaint.setShader(maskShader);
           canvas.drawRect(Skia.XYWHRect(0, 0, origW, origH), maskPaint);
         }
       } else {
-        const blurSigma = Math.max(8, Math.min(radiusX, radiusY) * featherRadius * 0.6);
+        const blurSigma = Math.max(
+          8,
+          Math.min(maskGeom.radiusX, maskGeom.radiusY) * maskGeom.featherRadius * 0.6
+        );
         maskPaint.setMaskFilter(
           Skia.MaskFilter.MakeBlur(BlurStyle.Normal, blurSigma, true)
         );
+        canvas.save();
+        canvas.translate(maskGeom.centerX, maskGeom.centerY);
+        canvas.rotate((maskGeom.rotationAngle * 180) / Math.PI, 0, 0);
         const ovalRect = Skia.XYWHRect(
-          targetCenterX - radiusX,
-          targetCenterY - radiusY,
-          radiusX * 2,
-          radiusY * 2
+          -maskGeom.radiusX,
+          -maskGeom.radiusY,
+          maskGeom.radiusX * 2,
+          maskGeom.radiusY * 2
         );
         canvas.drawOval(ovalRect, maskPaint);
+        canvas.restore();
       }
 
       canvas.restore();
