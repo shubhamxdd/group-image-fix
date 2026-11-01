@@ -2,10 +2,13 @@ import { create } from "zustand";
 import * as FileSystem from "expo-file-system/legacy";
 import { Session } from "../types/session";
 import { DetectedFace, Person, DetectionProgress } from "../types/detection";
+import { BlendParameters, BlendResult, FaceSwapSelection } from "../types/blend";
 import {
   clusterFacesIntoPersons,
   DEFAULT_SIMILARITY_THRESHOLD,
 } from "../services/personClusteringService";
+import { computeAffineAlignment } from "../services/faceAlignmentService";
+import { renderCompositePreview } from "../services/faceBlendingEngine";
 
 export const initialDetectionProgress: DetectionProgress = {
   stage: "idle",
@@ -32,6 +35,17 @@ interface SessionState {
   setDetectionError: (error: string, token: number) => boolean;
   setClusteringThreshold: (threshold: number) => void;
   reclusterPersons: (threshold?: number) => void;
+  setFaceSwap: (
+    personId: string,
+    donorFaceId: string,
+    options?: { featherRadius?: number; colorTransferEnabled?: boolean }
+  ) => Promise<BlendResult | null>;
+  removeFaceSwap: (personId: string) => Promise<BlendResult | null>;
+  revertAllSwaps: () => Promise<void>;
+  setBlendParameters: (
+    personId: string,
+    params: Partial<BlendParameters>
+  ) => Promise<BlendResult | null>;
   resetSession: () => Promise<void>;
 }
 
@@ -52,6 +66,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       persons: [],
       detectionProgress: initialDetectionProgress,
       errorMessage: null,
+      swaps: {},
+      activeBlendPreviewUri: null,
+      isBlending: false,
     };
     set({ session: newSession, activeToken: nextToken });
     return { sessionId, token: nextToken };
@@ -92,11 +109,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             basePhotoId: photoId,
             detectedFaces: updatedFaces,
             persons,
+            swaps: {},
+            activeBlendPreviewUri: null,
+            isBlending: false,
           },
         });
         return;
       }
-      set({ session: { ...current, basePhotoId: photoId } });
+      set({
+        session: {
+          ...current,
+          basePhotoId: photoId,
+          swaps: {},
+          activeBlendPreviewUri: null,
+          isBlending: false,
+        },
+      });
     }
   },
 
@@ -194,6 +222,183 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         persons,
       },
     });
+  },
+
+  setFaceSwap: async (
+    personId: string,
+    donorFaceId: string,
+    options?: { featherRadius?: number; colorTransferEnabled?: boolean }
+  ) => {
+    const current = get().session;
+    if (!current || !current.basePhotoId) {
+      return null;
+    }
+
+    const donorFace = current.detectedFaces[donorFaceId];
+    if (!donorFace) {
+      return null;
+    }
+
+    const baseFace = Object.values(current.detectedFaces).find(
+      (f) => f.photoId === current.basePhotoId && f.personId === personId
+    );
+
+    if (!baseFace) {
+      return null;
+    }
+
+    // Selecting the face from the base photo reverts the swap
+    if (donorFace.id === baseFace.id) {
+      return get().removeFaceSwap(personId);
+    }
+
+    const affineMatrix = computeAffineAlignment(donorFace, baseFace);
+    const selection: FaceSwapSelection = {
+      personId,
+      donorFaceId,
+      donorPhotoId: donorFace.photoId,
+      blendParams: {
+        affineMatrix,
+        featherRadius: options?.featherRadius ?? 0.25,
+        colorTransferEnabled: options?.colorTransferEnabled ?? true,
+      },
+      appliedAt: Date.now(),
+    };
+
+    const updatedSwaps = {
+      ...current.swaps,
+      [personId]: selection,
+    };
+
+    set({
+      session: {
+        ...current,
+        swaps: updatedSwaps,
+        isBlending: true,
+      },
+    });
+
+    const blendResult = await renderCompositePreview(
+      { ...current, swaps: updatedSwaps },
+      updatedSwaps
+    );
+
+    const activeSession = get().session;
+    if (activeSession && activeSession.id === current.id) {
+      set({
+        session: {
+          ...activeSession,
+          activeBlendPreviewUri: blendResult?.previewUri ?? null,
+          isBlending: false,
+        },
+      });
+    }
+
+    return blendResult;
+  },
+
+  removeFaceSwap: async (personId: string) => {
+    const current = get().session;
+    if (!current) {
+      return null;
+    }
+
+    const updatedSwaps = { ...current.swaps };
+    delete updatedSwaps[personId];
+
+    set({
+      session: {
+        ...current,
+        swaps: updatedSwaps,
+        isBlending: true,
+      },
+    });
+
+    const blendResult = await renderCompositePreview(
+      { ...current, swaps: updatedSwaps },
+      updatedSwaps
+    );
+
+    const activeSession = get().session;
+    if (activeSession && activeSession.id === current.id) {
+      const hasActiveSwaps = Object.keys(updatedSwaps).length > 0;
+      set({
+        session: {
+          ...activeSession,
+          activeBlendPreviewUri: hasActiveSwaps
+            ? blendResult?.previewUri ?? null
+            : null,
+          isBlending: false,
+        },
+      });
+    }
+
+    return blendResult;
+  },
+
+  revertAllSwaps: async () => {
+    const current = get().session;
+    if (!current) {
+      return;
+    }
+    set({
+      session: {
+        ...current,
+        swaps: {},
+        activeBlendPreviewUri: null,
+        isBlending: false,
+      },
+    });
+  },
+
+  setBlendParameters: async (
+    personId: string,
+    params: Partial<BlendParameters>
+  ) => {
+    const current = get().session;
+    if (!current || !current.swaps[personId]) {
+      return null;
+    }
+
+    const existing = current.swaps[personId];
+    const updatedSelection: FaceSwapSelection = {
+      ...existing,
+      blendParams: {
+        ...existing.blendParams,
+        ...params,
+      },
+    };
+
+    const updatedSwaps = {
+      ...current.swaps,
+      [personId]: updatedSelection,
+    };
+
+    set({
+      session: {
+        ...current,
+        swaps: updatedSwaps,
+        isBlending: true,
+      },
+    });
+
+    const blendResult = await renderCompositePreview(
+      { ...current, swaps: updatedSwaps },
+      updatedSwaps
+    );
+
+    const activeSession = get().session;
+    if (activeSession && activeSession.id === current.id) {
+      set({
+        session: {
+          ...activeSession,
+          activeBlendPreviewUri: blendResult?.previewUri ?? null,
+          isBlending: false,
+        },
+      });
+    }
+
+    return blendResult;
   },
 
   resetSession: async () => {

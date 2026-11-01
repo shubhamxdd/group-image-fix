@@ -1,4 +1,5 @@
 import { DetectedFace, Person, DetectionProgress } from "./detection";
+import { FaceSwapSelection } from "./blend";
 
 export interface Photo {
   id: string;
@@ -23,4 +24,7 @@ export interface Session {
   persons: Person[];
   detectionProgress: DetectionProgress;
   errorMessage: string | null;
+  swaps: Record<string, FaceSwapSelection>;
+  activeBlendPreviewUri: string | null;
+  isBlending: boolean;
 }

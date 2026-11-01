@@ -69,6 +69,9 @@ export function useGalleryPicker() {
             errorMessage: null,
           },
           errorMessage: null,
+          swaps: {},
+          activeBlendPreviewUri: null,
+          isBlending: false,
         };
 
         const applied = setSessionReady(newSession, token);

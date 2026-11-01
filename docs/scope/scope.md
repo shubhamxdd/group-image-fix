@@ -15,7 +15,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 2 | Coding standards and tooling | Foundation | done |
 | 3 | Gallery photo import and session state | Slice 1 | done |
 | 4 | Face detection and person grouping | Slice 1 | done |
-| 5 | Seamless face blend engine | Slice 1 | planned |
+| 5 | Seamless face blend engine | Slice 1 | done |
 | 6 | Interactive editor and export | Slice 1 | planned |
 | 7 | Before and after comparison | Slice 2 | planned |
 | 8 | Built in burst camera | Slice 2 | planned |
@@ -63,10 +63,19 @@ Detect all faces in selected photos, extract facial landmarks and quality scores
 - [x] Verify it: `/check verify face detection and person grouping`
 Spec [0003](../specs/0003-face-detection-person-grouping/index.md) · code in `src/`
 
-### 5. Seamless face blend engine · needs a decision
+### 5. Seamless face blend engine · done
 Align chosen faces from alternate shots and blend them seamlessly onto the base photo without visible cut lines or skin tone mismatches.
 **Done when:** replacing a face creates a natural looking composite image rendered at full resolution with smooth edges.
-- [ ] Design it (spec): `/architect seamless face blend engine`
+- [x] Design it (spec): `/architect seamless face blend engine`
+- [x] Build it: `/develop seamless face blend engine`
+  - [x] Define blending and swap selection types (AC-4, AC-5)
+  - [x] Implement 3 point affine landmark alignment with fallback (AC-1)
+  - [x] Implement statistical LAB color transfer service (AC-2)
+  - [x] Build Skia elliptical feathered shader and composite preview renderer (AC-3, AC-4)
+  - [x] Extend session store with swap selection and undo actions (AC-5)
+  - [x] Implement full resolution export and media library saving (AC-6)
+- [x] Verify it: `/check verify seamless face blend engine`
+Spec [0004](../specs/0004-seamless-face-blend-engine/index.md) · code in `src/services/`
 
 ### 6. Interactive editor and export · needs a decision
 Display the composite photo with tap targets over each person to pick alternative faces, and save the final image back to the photo gallery.
