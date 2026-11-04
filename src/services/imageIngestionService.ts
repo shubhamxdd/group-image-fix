@@ -1,6 +1,5 @@
 import * as Crypto from "expo-crypto";
 import * as FileSystem from "expo-file-system/legacy";
-import { manipulateAsync, SaveFormat, ActionResize } from "expo-image-manipulator";
 import { ImagePickerAsset } from "expo-image-picker";
 import { Photo } from "../types/session";
 
@@ -58,29 +57,11 @@ export async function ingestPhotos(
 
       const origWidth = asset.width || 1080;
       const origHeight = asset.height || 1080;
-      const maxDim = Math.max(origWidth, origHeight);
 
-      const resizeActions: { resize: ActionResize["resize"] }[] = [];
-      if (maxDim > 1080) {
-        if (origWidth >= origHeight) {
-          resizeActions.push({ resize: { width: 1080 } });
-        } else {
-          resizeActions.push({ resize: { height: 1080 } });
-        }
-      }
-
-      const manipResult = await manipulateAsync(
-        targetOriginalUri,
-        resizeActions,
-        {
-          compress: 0.85,
-          format: SaveFormat.JPEG,
-        }
-      );
-
-      const targetProxyUri = `${proxiesDir}${photoId}.jpg`;
-      await FileSystem.moveAsync({
-        from: manipResult.uri,
+      // Ingest at full original resolution without compression or downscaling
+      const targetProxyUri = `${proxiesDir}${photoId}.${cleanExt}`;
+      await FileSystem.copyAsync({
+        from: targetOriginalUri,
         to: targetProxyUri,
       });
 
@@ -90,8 +71,8 @@ export async function ingestPhotos(
         proxyUri: targetProxyUri,
         width: origWidth,
         height: origHeight,
-        proxyWidth: manipResult.width,
-        proxyHeight: manipResult.height,
+        proxyWidth: origWidth,
+        proxyHeight: origHeight,
         createdAt: Date.now(),
       };
 
