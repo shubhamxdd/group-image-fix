@@ -156,6 +156,31 @@ export async function detectFacesInPhoto(photo: Photo): Promise<DetectedFace[]> 
           photo.proxyWidth,
           photo.proxyHeight
         ),
+        leftCheek: normalizePoint(
+          raw.landmarks.leftCheek?.position,
+          photo.proxyWidth,
+          photo.proxyHeight
+        ),
+        rightCheek: normalizePoint(
+          raw.landmarks.rightCheek?.position,
+          photo.proxyWidth,
+          photo.proxyHeight
+        ),
+        leftEar: normalizePoint(
+          raw.landmarks.leftEar?.position,
+          photo.proxyWidth,
+          photo.proxyHeight
+        ),
+        rightEar: normalizePoint(
+          raw.landmarks.rightEar?.position,
+          photo.proxyWidth,
+          photo.proxyHeight
+        ),
+        mouthBottom: normalizePoint(
+          raw.landmarks.mouthBottom?.position,
+          photo.proxyWidth,
+          photo.proxyHeight
+        ),
       };
     }
 

@@ -16,6 +16,11 @@ export interface FaceLandmarks {
   nose?: NormalizedPoint;
   mouthLeft?: NormalizedPoint;
   mouthRight?: NormalizedPoint;
+  leftCheek?: NormalizedPoint;
+  rightCheek?: NormalizedPoint;
+  leftEar?: NormalizedPoint;
+  rightEar?: NormalizedPoint;
+  mouthBottom?: NormalizedPoint;
 }
 
 export interface DetectedFace {

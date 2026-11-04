@@ -1,12 +1,39 @@
 import * as FileSystem from "expo-file-system/legacy";
-import type { SkImage, SkRuntimeEffect } from "@shopify/react-native-skia";
+import type { SkImage, SkRuntimeEffect, SkPath } from "@shopify/react-native-skia";
+import { PathOp } from "@shopify/react-native-skia";
 import { BlendResult, FaceSwapSelection } from "../types/blend";
 import { DetectedFace } from "../types/detection";
 import { Photo, Session } from "../types/session";
 import { getPixelAffineMatrix, computeBlendMaskGeometry } from "./faceAlignmentService";
 import { matchFaceToneWithSkia } from "./faceColorMatchService";
+import { generateFaceBoundaryPolygon, getWarpedDonorPolygon } from "./facePolygonMaskService";
 
-let cachedRuntimeEffect: SkRuntimeEffect | null = null;
+let cachedTwoBandEffect: SkRuntimeEffect | null = null;
+let cachedEllipticalEffect: SkRuntimeEffect | null = null;
+
+// Two-band frequency blending shader:
+// baseSharp and donorSharp provide high-frequency details (eyes, teeth, pores) blended with maskTight.
+// baseBlur and donorBlur provide low-frequency lighting and skin tones blended with maskWide.
+const TWO_BAND_BLEND_SKSL = `
+uniform shader baseSharp;
+uniform shader baseBlur;
+uniform shader donorSharp;
+uniform shader donorBlur;
+uniform shader maskWide;
+uniform shader maskTight;
+
+vec4 main(vec2 p) {
+  vec3 lowB = baseBlur.eval(p).rgb;
+  vec3 lowD = donorBlur.eval(p).rgb;
+  vec3 hiB  = baseSharp.eval(p).rgb  - lowB;
+  vec3 hiD  = donorSharp.eval(p).rgb - lowD;
+  float wW  = maskWide.eval(p).a;
+  float wT  = maskTight.eval(p).a;
+  vec3 low  = mix(lowB, lowD, wW);
+  vec3 hi   = mix(hiB,  hiD,  wT);
+  return vec4(low + hi, 1.0);
+}
+`;
 
 const ELLIPTICAL_MASK_SKSL = `
 uniform vec2 uCenter;
@@ -37,14 +64,28 @@ vec4 main(vec2 xy) {
 }
 `;
 
-async function getOrCompileMaskEffect(): Promise<SkRuntimeEffect | null> {
-  if (cachedRuntimeEffect) {
-    return cachedRuntimeEffect;
+async function getOrCompileTwoBandEffect(): Promise<SkRuntimeEffect | null> {
+  if (cachedTwoBandEffect) {
+    return cachedTwoBandEffect;
   }
   try {
     const { Skia } = await import("@shopify/react-native-skia");
-    cachedRuntimeEffect = Skia.RuntimeEffect.Make(ELLIPTICAL_MASK_SKSL);
-    return cachedRuntimeEffect;
+    cachedTwoBandEffect = Skia.RuntimeEffect.Make(TWO_BAND_BLEND_SKSL);
+    return cachedTwoBandEffect;
+  } catch (err) {
+    console.warn("Could not compile two-band shader, will fall back:", err);
+    return null;
+  }
+}
+
+async function getOrCompileMaskEffect(): Promise<SkRuntimeEffect | null> {
+  if (cachedEllipticalEffect) {
+    return cachedEllipticalEffect;
+  }
+  try {
+    const { Skia } = await import("@shopify/react-native-skia");
+    cachedEllipticalEffect = Skia.RuntimeEffect.Make(ELLIPTICAL_MASK_SKSL);
+    return cachedEllipticalEffect;
   } catch (err) {
     console.warn("Could not compile elliptical mask shader:", err);
     return null;
@@ -61,6 +102,45 @@ async function loadSkiaImageFromUri(uri: string): Promise<SkImage | null> {
     return Skia.Image.MakeImageFromEncoded(skiaData);
   } catch (err) {
     console.warn("Failed to load Skia image from URI:", uri, err);
+    return null;
+  }
+}
+
+/**
+ * Creates an intersected, smoothed SkPath from the base face polygon and the warped donor face polygon.
+ */
+function createIntersectedPolygonPath(
+  Skia: typeof import("@shopify/react-native-skia")["Skia"],
+  baseFace: DetectedFace,
+  donorFace: DetectedFace,
+  matrixNorm: number[],
+  canvasW: number,
+  canvasH: number
+): SkPath | null {
+  try {
+    const basePath = Skia.Path.Make();
+    const basePts = generateFaceBoundaryPolygon(baseFace, 0.04);
+    if (basePts.length > 0) {
+      basePath.moveTo(basePts[0].x * canvasW, basePts[0].y * canvasH);
+      for (let i = 1; i < basePts.length; i++) {
+        basePath.lineTo(basePts[i].x * canvasW, basePts[i].y * canvasH);
+      }
+      basePath.close();
+    }
+
+    const donorPath = Skia.Path.Make();
+    const donorPts = getWarpedDonorPolygon(donorFace, matrixNorm, 0.04);
+    if (donorPts.length > 0) {
+      donorPath.moveTo(donorPts[0].x * canvasW, donorPts[0].y * canvasH);
+      for (let i = 1; i < donorPts.length; i++) {
+        donorPath.lineTo(donorPts[i].x * canvasW, donorPts[i].y * canvasH);
+      }
+      donorPath.close();
+    }
+
+    const intersected = Skia.Path.MakeFromOp(basePath, donorPath, PathOp.Intersect);
+    return intersected || basePath;
+  } catch {
     return null;
   }
 }
@@ -82,7 +162,7 @@ export async function renderCompositePreview(
       previewWidth: basePhoto.proxyWidth,
       previewHeight: basePhoto.proxyHeight,
       isDirty: false,
-      renderDurationMs: 0,
+      renderDurationMs: Date.now() - startTime,
     };
   }
 
@@ -92,6 +172,9 @@ export async function renderCompositePreview(
       BlendMode,
       ImageFormat,
       BlurStyle,
+      TileMode,
+      FilterMode,
+      MipmapMode,
     } = await import("@shopify/react-native-skia");
 
     const baseImage = await loadSkiaImageFromUri(basePhoto.proxyUri);
@@ -111,16 +194,16 @@ export async function renderCompositePreview(
     const basePaint = Skia.Paint();
     canvas.drawImage(baseImage, 0, 0, basePaint);
 
-    const maskEffect = await getOrCompileMaskEffect();
     const photoMap = new Map<string, Photo>(session.photos.map((p) => [p.id, p]));
-
-    // Find base faces for each person to determine target location
     const baseFacesByPerson = new Map<string, DetectedFace>();
     for (const face of Object.values(session.detectedFaces)) {
       if (face.photoId === basePhoto.id && face.personId) {
         baseFacesByPerson.set(face.personId, face);
       }
     }
+
+    const twoBandEffect = await getOrCompileTwoBandEffect();
+    const maskEffect = await getOrCompileMaskEffect();
 
     for (const swap of swapList) {
       const donorFace = session.detectedFaces[swap.donorFaceId];
@@ -137,14 +220,14 @@ export async function renderCompositePreview(
       }
 
       if (swap.blendParams.colorTransferEnabled) {
-        const colorMatched = await matchFaceToneWithSkia(
+        const toneAdjusted = await matchFaceToneWithSkia(
           donorImage,
           donorFace.bounds,
           baseImage,
           baseFace.bounds
         );
-        if (colorMatched) {
-          donorImage = colorMatched;
+        if (toneAdjusted) {
+          donorImage = toneAdjusted;
         }
       }
 
@@ -161,6 +244,96 @@ export async function renderCompositePreview(
 
       const skiaMatrix = Skia.Matrix(pixelMatrixValues);
 
+      // Attempt to build landmark-guided intersected polygon mask
+      const polygonPath = createIntersectedPolygonPath(
+        Skia,
+        baseFace,
+        donorFace,
+        swap.blendParams.affineMatrix,
+        baseW,
+        baseH
+      );
+
+      const faceDim = Math.max(baseFace.bounds.width * baseW, baseFace.bounds.height * baseH);
+      const blurSigmaWide = Math.max(8, faceDim * 0.08);
+      const blurSigmaTight = Math.max(2, faceDim * 0.02);
+
+      // Generate mask surfaces
+      const maskWideSurface = Skia.Surface.Make(baseW, baseH);
+      const maskTightSurface = Skia.Surface.Make(baseW, baseH);
+
+      if (maskWideSurface && maskTightSurface && polygonPath) {
+        const pWideCanvas = maskWideSurface.getCanvas();
+        const pTightCanvas = maskTightSurface.getCanvas();
+
+        const pWidePaint = Skia.Paint();
+        pWidePaint.setColor(Skia.Color("#ffffff"));
+        pWidePaint.setMaskFilter(Skia.MaskFilter.MakeBlur(BlurStyle.Normal, blurSigmaWide, true));
+        pWideCanvas.drawPath(polygonPath, pWidePaint);
+        maskWideSurface.flush();
+
+        const pTightPaint = Skia.Paint();
+        pTightPaint.setColor(Skia.Color("#ffffff"));
+        pTightPaint.setMaskFilter(Skia.MaskFilter.MakeBlur(BlurStyle.Normal, blurSigmaTight, true));
+        pTightCanvas.drawPath(polygonPath, pTightPaint);
+        maskTightSurface.flush();
+
+        // Render warped donor face into its own surface
+        const donorWarpedSurface = Skia.Surface.Make(baseW, baseH);
+        if (donorWarpedSurface) {
+          const dwCanvas = donorWarpedSurface.getCanvas();
+          dwCanvas.concat(skiaMatrix);
+          dwCanvas.drawImage(donorImage, 0, 0, basePaint);
+          donorWarpedSurface.flush();
+
+          const donorWarpedImage = donorWarpedSurface.makeImageSnapshot();
+
+          // Low-frequency blurred surfaces
+          const blurSigmaLighting = Math.max(10, faceDim * 0.10);
+
+          const baseBlurSurface = Skia.Surface.Make(baseW, baseH);
+          const donorBlurSurface = Skia.Surface.Make(baseW, baseH);
+
+          if (baseBlurSurface && donorBlurSurface && donorWarpedImage && twoBandEffect) {
+            const bbCanvas = baseBlurSurface.getCanvas();
+            const blurFilter = Skia.ImageFilter.MakeBlur(blurSigmaLighting, blurSigmaLighting, TileMode.Clamp, null);
+            const bbPaint = Skia.Paint();
+            bbPaint.setImageFilter(blurFilter);
+            bbCanvas.drawImage(baseImage, 0, 0, bbPaint);
+            baseBlurSurface.flush();
+
+            const dbCanvas = donorBlurSurface.getCanvas();
+            const dbPaint = Skia.Paint();
+            dbPaint.setImageFilter(blurFilter);
+            dbCanvas.drawImage(donorWarpedImage, 0, 0, dbPaint);
+            donorBlurSurface.flush();
+
+            const baseBlurImg = baseBlurSurface.makeImageSnapshot();
+            const donorBlurImg = donorBlurSurface.makeImageSnapshot();
+            const maskWideImg = maskWideSurface.makeImageSnapshot();
+            const maskTightImg = maskTightSurface.makeImageSnapshot();
+
+            const shaderOpts = [TileMode.Clamp, TileMode.Clamp, FilterMode.Linear, MipmapMode.None] as const;
+            const twoBandShader = twoBandEffect.makeShaderWithChildren([], [
+              baseImage.makeShaderOptions(...shaderOpts),
+              baseBlurImg.makeShaderOptions(...shaderOpts),
+              donorWarpedImage.makeShaderOptions(...shaderOpts),
+              donorBlurImg.makeShaderOptions(...shaderOpts),
+              maskWideImg.makeShaderOptions(...shaderOpts),
+              maskTightImg.makeShaderOptions(...shaderOpts),
+            ]);
+
+            if (twoBandShader) {
+              const blendPaint = Skia.Paint();
+              blendPaint.setShader(twoBandShader);
+              canvas.drawRect(Skia.XYWHRect(0, 0, baseW, baseH), blendPaint);
+              continue;
+            }
+          }
+        }
+      }
+
+      // Robust fallback to analytical rotated ellipse shader
       const maskGeom = computeBlendMaskGeometry(
         baseFace,
         baseW,
@@ -168,16 +341,13 @@ export async function renderCompositePreview(
         swap.blendParams.featherRadius ?? 0.35
       );
 
-      // Create isolated scratch layer
       canvas.saveLayer();
 
-      // Draw transformed donor face inside layer
       canvas.save();
       canvas.concat(skiaMatrix);
       canvas.drawImage(donorImage, 0, 0, basePaint);
       canvas.restore();
 
-      // Mask with elliptical feathered alpha
       const maskPaint = Skia.Paint();
       maskPaint.setBlendMode(BlendMode.DstIn);
 
@@ -215,7 +385,6 @@ export async function renderCompositePreview(
         canvas.restore();
       }
 
-      // Merge masked layer onto base photo
       canvas.restore();
     }
 
@@ -235,11 +404,11 @@ export async function renderCompositePreview(
       previewUri: previewPath,
       previewWidth: baseW,
       previewHeight: baseH,
-      isDirty: true,
+      isDirty: false,
       renderDurationMs: elapsed,
     };
   } catch (err) {
-    console.warn("Failed to render composite preview:", err);
+    console.warn("Face blending failed:", err);
     return null;
   }
 }

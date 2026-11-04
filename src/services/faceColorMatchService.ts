@@ -75,6 +75,80 @@ function calculateChannelStats(values: number[]): ChannelStats {
   return { mean, std };
 }
 
+export function isSkinPixel(l: number, a: number, b: number): boolean {
+  return l >= 18 && l <= 92 && a >= 2 && a <= 38 && b >= 4 && b <= 45;
+}
+
+export interface PlaneFitCoefficients {
+  a: number;
+  b: number;
+  c: number;
+}
+
+export function fitBoundaryPlane(
+  samples: { x: number; y: number; diff: number }[]
+): PlaneFitCoefficients {
+  if (!samples || samples.length < 3) {
+    return { a: 0, b: 0, c: 0 };
+  }
+
+  let sumX = 0;
+  let sumY = 0;
+  let sumD = 0;
+  let sumXX = 0;
+  let sumYY = 0;
+  let sumXY = 0;
+  let sumXD = 0;
+  let sumYD = 0;
+  const n = samples.length;
+
+  for (let i = 0; i < n; i++) {
+    const { x, y, diff } = samples[i];
+    sumX += x;
+    sumY += y;
+    sumD += diff;
+    sumXX += x * x;
+    sumYY += y * y;
+    sumXY += x * y;
+    sumXD += x * diff;
+    sumYD += y * diff;
+  }
+
+  const m00 = sumXX, m01 = sumXY, m02 = sumX;
+  const m10 = sumXY, m11 = sumYY, m12 = sumY;
+  const m20 = sumX,  m21 = sumY,  m22 = n;
+
+  const det =
+    m00 * (m11 * m22 - m12 * m21) -
+    m01 * (m10 * m22 - m12 * m20) +
+    m02 * (m10 * m21 - m11 * m20);
+
+  if (Math.abs(det) < 1e-7) {
+    return { a: 0, b: 0, c: sumD / n };
+  }
+
+  const detA =
+    sumXD * (m11 * m22 - m12 * m21) -
+    m01 * (sumYD * m22 - m12 * sumD) +
+    m02 * (sumYD * m21 - m11 * sumD);
+
+  const detB =
+    m00 * (sumYD * m22 - m12 * sumD) -
+    sumXD * (m10 * m22 - m12 * m20) +
+    m02 * (m10 * sumD - sumYD * m20);
+
+  const detC =
+    m00 * (m11 * sumD - sumYD * m21) -
+    m01 * (m10 * sumD - sumYD * m20) +
+    sumXD * (m10 * m21 - m11 * m20);
+
+  return {
+    a: detA / det,
+    b: detB / det,
+    c: detC / det,
+  };
+}
+
 export function transferLabColor(
   donorRgba: Uint8Array,
   donorBoundsCount: number,
@@ -89,6 +163,10 @@ export function transferLabColor(
   const donorA: number[] = [];
   const donorB: number[] = [];
 
+  const skinDonorL: number[] = [];
+  const skinDonorA: number[] = [];
+  const skinDonorB: number[] = [];
+
   for (let i = 0; i < donorRgba.length; i += 4) {
     const r = donorRgba[i];
     const g = donorRgba[i + 1];
@@ -97,33 +175,81 @@ export function transferLabColor(
     donorL.push(lVal);
     donorA.push(aVal);
     donorB.push(bVal);
+
+    if (isSkinPixel(lVal, aVal, bVal)) {
+      skinDonorL.push(lVal);
+      skinDonorA.push(aVal);
+      skinDonorB.push(bVal);
+    }
   }
 
-  const baseL: number[] = [];
-  const baseA: number[] = [];
-  const baseB: number[] = [];
+  const skinBaseL: number[] = [];
+  const skinBaseA: number[] = [];
+  const skinBaseB: number[] = [];
 
   for (let i = 0; i < baseRgba.length; i += 4) {
     const r = baseRgba[i];
     const g = baseRgba[i + 1];
     const b = baseRgba[i + 2];
     const [lVal, aVal, bVal] = rgbToLab(r, g, b);
-    baseL.push(lVal);
-    baseA.push(aVal);
-    baseB.push(bVal);
+
+    if (isSkinPixel(lVal, aVal, bVal)) {
+      skinBaseL.push(lVal);
+      skinBaseA.push(aVal);
+      skinBaseB.push(bVal);
+    }
   }
 
-  const statsDonorL = calculateChannelStats(donorL);
-  const statsDonorA = calculateChannelStats(donorA);
-  const statsDonorB = calculateChannelStats(donorB);
+  const sDonorL = skinDonorL.length > 40 ? skinDonorL : donorL;
+  const sDonorA = skinDonorA.length > 40 ? skinDonorA : donorA;
+  const sDonorB = skinDonorB.length > 40 ? skinDonorB : donorB;
 
-  const statsBaseL = calculateChannelStats(baseL);
-  const statsBaseA = calculateChannelStats(baseA);
-  const statsBaseB = calculateChannelStats(baseB);
+  const sBaseL = skinBaseL.length > 40 ? skinBaseL : skinBaseL.length > 0 ? skinBaseL : sDonorL;
+  const sBaseA = skinBaseA.length > 40 ? skinBaseA : skinBaseA.length > 0 ? skinBaseA : sDonorA;
+  const sBaseB = skinBaseB.length > 40 ? skinBaseB : skinBaseB.length > 0 ? skinBaseB : sDonorB;
+
+  const statsDonorL = calculateChannelStats(sDonorL);
+  const statsDonorA = calculateChannelStats(sDonorA);
+  const statsDonorB = calculateChannelStats(sDonorB);
+
+  const statsBaseL = calculateChannelStats(sBaseL);
+  const statsBaseA = calculateChannelStats(sBaseA);
+  const statsBaseB = calculateChannelStats(sBaseB);
 
   const ratioL = Math.max(0.4, Math.min(2.5, statsBaseL.std / statsDonorL.std));
   const ratioA = Math.max(0.4, Math.min(2.5, statsBaseA.std / statsDonorA.std));
   const ratioB = Math.max(0.4, Math.min(2.5, statsBaseB.std / statsDonorB.std));
+
+  // Compute boundary ring pixel difference to fit plane gradient
+  let planeL = { a: 0, b: 0, c: 0 };
+  if (cropWidth && cropHeight && cropWidth > 0 && cropHeight > 0 && baseRgba.length === donorRgba.length) {
+    const boundaryDiffsL: { x: number; y: number; diff: number }[] = [];
+    const minDim = Math.min(cropWidth, cropHeight);
+    const ringOuter = minDim * 0.44;
+    const ringInner = minDim * 0.32;
+    const cX = cropWidth / 2;
+    const cY = cropHeight / 2;
+
+    for (let y = 0; y < cropHeight; y += 2) {
+      for (let x = 0; x < cropWidth; x += 2) {
+        const dx = x - cX;
+        const dy = y - cY;
+        const dist = Math.hypot(dx, dy);
+        if (dist >= ringInner && dist <= ringOuter) {
+          const idx = (y * cropWidth + x) * 4;
+          const [bL] = rgbToLab(baseRgba[idx], baseRgba[idx + 1], baseRgba[idx + 2]);
+          const dL = donorL[y * cropWidth + x];
+          if (isSkinPixel(bL, 10, 10) && isSkinPixel(dL, 10, 10)) {
+            boundaryDiffsL.push({ x: dx, y: dy, diff: bL - dL });
+          }
+        }
+      }
+    }
+
+    if (boundaryDiffsL.length >= 8) {
+      planeL = fitBoundaryPlane(boundaryDiffsL);
+    }
+  }
 
   const result = new Uint8Array(donorRgba.length);
 
@@ -132,9 +258,17 @@ export function transferLabColor(
     const origA = donorA[pxIdx];
     const origB = donorB[pxIdx];
 
-    const targetL = (origL - statsDonorL.mean) * ratioL + statsBaseL.mean;
+    let targetL = (origL - statsDonorL.mean) * ratioL + statsBaseL.mean;
     const targetA = (origA - statsDonorA.mean) * ratioA + statsBaseA.mean;
     const targetB = (origB - statsDonorB.mean) * ratioB + statsBaseB.mean;
+
+    // Apply directional plane lighting correction
+    if (cropWidth && cropHeight && cropWidth > 0 && cropHeight > 0) {
+      const pxX = (pxIdx % cropWidth) - cropWidth / 2;
+      const pxY = Math.floor(pxIdx / cropWidth) - cropHeight / 2;
+      const lightingCorrection = planeL.a * pxX + planeL.b * pxY + planeL.c * 0.5;
+      targetL = Math.max(0, Math.min(100, targetL + lightingCorrection * 0.6));
+    }
 
     // Apply edge boundary smoothing so the patch blends seamlessly into the donor canvas
     let pixelStrength = strength;
