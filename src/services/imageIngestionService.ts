@@ -1,5 +1,6 @@
 import * as Crypto from "expo-crypto";
 import * as FileSystem from "expo-file-system/legacy";
+import { manipulateAsync, SaveFormat, ActionResize } from "expo-image-manipulator";
 import { ImagePickerAsset } from "expo-image-picker";
 import { Photo } from "../types/session";
 
@@ -28,7 +29,8 @@ async function mapWithConcurrency<T, R>(
 
 export async function ingestPhotos(
   sessionId: string,
-  assets: ImagePickerAsset[]
+  assets: ImagePickerAsset[],
+  fullResolution = true
 ): Promise<Photo[]> {
   if (!FileSystem.cacheDirectory) {
     throw new Error("Cache directory is not available on this device.");
@@ -58,12 +60,46 @@ export async function ingestPhotos(
       const origWidth = asset.width || 1080;
       const origHeight = asset.height || 1080;
 
-      // Ingest at full original resolution without compression or downscaling
-      const targetProxyUri = `${proxiesDir}${photoId}.${cleanExt}`;
-      await FileSystem.copyAsync({
-        from: targetOriginalUri,
-        to: targetProxyUri,
-      });
+      let targetProxyUri: string;
+      let proxyW = origWidth;
+      let proxyH = origHeight;
+
+      if (fullResolution) {
+        // Direct full resolution copy without compression or downscaling
+        targetProxyUri = `${proxiesDir}${photoId}.${cleanExt}`;
+        await FileSystem.copyAsync({
+          from: targetOriginalUri,
+          to: targetProxyUri,
+        });
+      } else {
+        // Downscale to 1080p proxy for lower memory usage
+        const maxDim = Math.max(origWidth, origHeight);
+        const resizeActions: { resize: ActionResize["resize"] }[] = [];
+        if (maxDim > 1080) {
+          if (origWidth >= origHeight) {
+            resizeActions.push({ resize: { width: 1080 } });
+          } else {
+            resizeActions.push({ resize: { height: 1080 } });
+          }
+        }
+
+        const manipResult = await manipulateAsync(
+          targetOriginalUri,
+          resizeActions,
+          {
+            compress: 0.85,
+            format: SaveFormat.JPEG,
+          }
+        );
+
+        targetProxyUri = `${proxiesDir}${photoId}.jpg`;
+        await FileSystem.moveAsync({
+          from: manipResult.uri,
+          to: targetProxyUri,
+        });
+        proxyW = manipResult.width;
+        proxyH = manipResult.height;
+      }
 
       const photo: Photo = {
         id: photoId,
@@ -71,8 +107,8 @@ export async function ingestPhotos(
         proxyUri: targetProxyUri,
         width: origWidth,
         height: origHeight,
-        proxyWidth: origWidth,
-        proxyHeight: origHeight,
+        proxyWidth: proxyW,
+        proxyHeight: proxyH,
         createdAt: Date.now(),
       };
 

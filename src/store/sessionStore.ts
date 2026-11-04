@@ -22,7 +22,9 @@ interface SessionState {
   activeToken: number;
   clusteringThreshold: number;
   blendSequenceToken: number;
+  processAtFullResolution: boolean;
 
+  setProcessAtFullResolution: (enabled: boolean) => void;
   startImport: (sessionId: string) => { sessionId: string; token: number };
   setSessionReady: (session: Session, token: number) => boolean;
   setSessionError: (error: string, token: number) => boolean;
@@ -56,6 +58,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   activeToken: 0,
   clusteringThreshold: DEFAULT_SIMILARITY_THRESHOLD,
   blendSequenceToken: 0,
+  processAtFullResolution: true,
+
+  setProcessAtFullResolution: (enabled: boolean) => {
+    set({ processAtFullResolution: enabled });
+  },
 
   startImport: (sessionId: string) => {
     const nextToken = get().activeToken + 1;

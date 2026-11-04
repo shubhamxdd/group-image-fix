@@ -25,6 +25,12 @@ export default function Index() {
   );
   const reclusterPersons = useSessionStore((state) => state.reclusterPersons);
   const renamePerson = useSessionStore((state) => state.renamePerson);
+  const processAtFullResolution = useSessionStore(
+    (state) => state.processAtFullResolution
+  );
+  const setProcessAtFullResolution = useSessionStore(
+    (state) => state.setProcessAtFullResolution
+  );
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSlider, setShowSlider] = useState(false);
   const [sliderWidth, setSliderWidth] = useState(240);
@@ -52,7 +58,9 @@ export default function Index() {
         <ActivityIndicator size="large" color="#38bdf8" />
         <Text style={styles.busyTitle}>Importing Group Photos</Text>
         <Text style={styles.busySubtitle}>
-          Copying originals and creating 1080p proxies on device...
+          {processAtFullResolution
+            ? "Loading and caching original full resolution photos..."
+            : "Creating 1080p proxies for fast interactive processing..."}
         </Text>
       </View>
     );
@@ -563,16 +571,37 @@ export default function Index() {
           </View>
         </View>
 
-        <View style={styles.featureItem}>
-          <Text style={styles.featureBullet}>⚡</Text>
+        <TouchableOpacity
+          style={styles.resolutionToggleCard}
+          onPress={() => setProcessAtFullResolution(!processAtFullResolution)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.featureBullet}>
+            {processAtFullResolution ? "💎" : "⚡"}
+          </Text>
           <View style={styles.featureTextWrapper}>
-            <Text style={styles.featureHeadline}>Memory Protected</Text>
+            <Text style={styles.featureHeadline}>
+              {processAtFullResolution
+                ? "Full Resolution Mode: Active"
+                : "1080p Proxy Mode: Active"}
+            </Text>
             <Text style={styles.featureBody}>
-              High resolution originals are preserved while 1080p proxies keep
-              device processing fast and responsive.
+              {processAtFullResolution
+                ? "Processes photos at full original camera resolution with zero downscaling."
+                : "Downscales working proxies to 1080p for lower memory and faster preview."}
             </Text>
           </View>
-        </View>
+          <View
+            style={[
+              styles.resolutionSwitch,
+              processAtFullResolution && styles.resolutionSwitchActive,
+            ]}
+          >
+            <Text style={styles.resolutionSwitchText}>
+              {processAtFullResolution ? "ON" : "OFF"}
+            </Text>
+          </View>
+        </TouchableOpacity>
       </View>
 
       <TouchableOpacity
@@ -670,6 +699,30 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#94a3b8",
     lineHeight: 18,
+  },
+  resolutionToggleCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1e293b",
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(56, 189, 248, 0.3)",
+  },
+  resolutionSwitch: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "#334155",
+    marginLeft: 8,
+  },
+  resolutionSwitchActive: {
+    backgroundColor: "#0284c7",
+  },
+  resolutionSwitchText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "700",
   },
   primaryButton: {
     width: "100%",

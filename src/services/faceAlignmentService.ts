@@ -116,6 +116,56 @@ export function computeBoundingBoxFallbackMatrix(
   ];
 }
 
+export function computeSimilarityAlignment(
+  p1: NormalizedPoint,
+  p2: NormalizedPoint,
+  q1: NormalizedPoint,
+  q2: NormalizedPoint
+): number[] | null {
+  const dX = p2.x - p1.x;
+  const dY = p2.y - p1.y;
+  const srcDist = Math.hypot(dX, dY);
+
+  const bX = q2.x - q1.x;
+  const bY = q2.y - q1.y;
+  const dstDist = Math.hypot(bX, bY);
+
+  if (srcDist < 1e-6 || dstDist < 1e-6) {
+    return null;
+  }
+
+  const scale = Math.max(0.2, Math.min(5.0, dstDist / srcDist));
+  const srcAngle = Math.atan2(dY, dX);
+  const dstAngle = Math.atan2(bY, bX);
+  const theta = dstAngle - srcAngle;
+
+  const cosT = Math.cos(theta);
+  const sinT = Math.sin(theta);
+
+  const a = scale * cosT;
+  const b = scale * sinT;
+  const c = -scale * sinT;
+  const d = scale * cosT;
+
+  const pCenter = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+  const qCenter = { x: (q1.x + q2.x) / 2, y: (q1.y + q2.y) / 2 };
+
+  const tx = qCenter.x - (a * pCenter.x + c * pCenter.y);
+  const ty = qCenter.y - (b * pCenter.x + d * pCenter.y);
+
+  return [
+    Number(a.toFixed(6)),
+    Number(c.toFixed(6)),
+    Number(tx.toFixed(6)),
+    Number(b.toFixed(6)),
+    Number(d.toFixed(6)),
+    Number(ty.toFixed(6)),
+    0,
+    0,
+    1,
+  ];
+}
+
 export function computeAffineAlignment(
   donorFace: DetectedFace,
   baseFace: DetectedFace
@@ -123,45 +173,16 @@ export function computeAffineAlignment(
   const dLandmarks = donorFace.landmarks;
   const bLandmarks = baseFace.landmarks;
 
-  if (dLandmarks && bLandmarks) {
-    const dLeft = dLandmarks.leftEye;
-    const dRight = dLandmarks.rightEye;
-    const bLeft = bLandmarks.leftEye;
-    const bRight = bLandmarks.rightEye;
-
-    let dThird: NormalizedPoint | undefined;
-    let bThird: NormalizedPoint | undefined;
-
-    if (dLandmarks.mouthLeft && dLandmarks.mouthRight) {
-      dThird = {
-        x: (dLandmarks.mouthLeft.x + dLandmarks.mouthRight.x) / 2,
-        y: (dLandmarks.mouthLeft.y + dLandmarks.mouthRight.y) / 2,
-      };
-    } else if (dLandmarks.nose) {
-      dThird = dLandmarks.nose;
-    }
-
-    if (bLandmarks.mouthLeft && bLandmarks.mouthRight) {
-      bThird = {
-        x: (bLandmarks.mouthLeft.x + bLandmarks.mouthRight.x) / 2,
-        y: (bLandmarks.mouthLeft.y + bLandmarks.mouthRight.y) / 2,
-      };
-    } else if (bLandmarks.nose) {
-      bThird = bLandmarks.nose;
-    }
-
-    if (dLeft && dRight && dThird && bLeft && bRight && bThird) {
-      const matrix = compute3PointAffineMatrix(
-        dLeft,
-        dRight,
-        dThird,
-        bLeft,
-        bRight,
-        bThird
-      );
-      if (matrix) {
-        return matrix;
-      }
+  // Use rigid similarity transform from eye pupils to prevent vertical stretch and shear
+  if (dLandmarks?.leftEye && dLandmarks?.rightEye && bLandmarks?.leftEye && bLandmarks?.rightEye) {
+    const similarityMatrix = computeSimilarityAlignment(
+      dLandmarks.leftEye,
+      dLandmarks.rightEye,
+      bLandmarks.leftEye,
+      bLandmarks.rightEye
+    );
+    if (similarityMatrix) {
+      return similarityMatrix;
     }
   }
 

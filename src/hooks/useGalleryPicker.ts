@@ -53,7 +53,8 @@ export function useGalleryPicker() {
       const { token } = startImport(sessionId);
 
       try {
-        const photos = await ingestPhotos(sessionId, assetsToProcess);
+        const fullRes = useSessionStore.getState().processAtFullResolution;
+        const photos = await ingestPhotos(sessionId, assetsToProcess, fullRes);
         const newSession: Session = {
           id: sessionId,
           createdAt: Date.now(),
