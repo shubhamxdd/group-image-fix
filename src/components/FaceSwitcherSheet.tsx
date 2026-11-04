@@ -14,6 +14,7 @@ import { DetectedFace, Person } from "../types/detection";
 import { Photo } from "../types/session";
 import { FaceSwapSelection } from "../types/blend";
 import { getOrGenerateFaceCropUri } from "../services/faceCropService";
+import { evaluatePoseCompatibility } from "../services/facePoseService";
 
 interface FaceSwitcherSheetProps {
   person: Person;
@@ -49,9 +50,30 @@ export function FaceSwitcherSheet({
     [photos]
   );
 
-  const faceList: DetectedFace[] = useMemo(
-    () => person.faceIds.map((id) => allFaces[id]).filter(Boolean),
-    [person.faceIds, allFaces]
+  const faceList: DetectedFace[] = useMemo(() => {
+    const rawFaces = person.faceIds
+      .map((id) => allFaces[id])
+      .filter((f): f is DetectedFace => Boolean(f));
+    const base = rawFaces.find((f) => f.photoId === basePhotoId);
+    if (!base) return rawFaces;
+
+    return [...rawFaces].sort((a, b) => {
+      if (a.id === base.id) return -1;
+      if (b.id === base.id) return 1;
+
+      const poseA = evaluatePoseCompatibility(base, a, 8);
+      const poseB = evaluatePoseCompatibility(base, b, 8);
+
+      if (poseA.isCompatible && !poseB.isCompatible) return -1;
+      if (!poseA.isCompatible && poseB.isCompatible) return 1;
+
+      return poseB.adjustedScore - poseA.adjustedScore;
+    });
+  }, [person.faceIds, allFaces, basePhotoId]);
+
+  const baseFace = useMemo(
+    () => faceList.find((f) => f.photoId === basePhotoId),
+    [faceList, basePhotoId]
   );
 
   // Pre-load or generate missing crop thumbnails for faces in this person
@@ -160,6 +182,11 @@ export function FaceSwitcherSheet({
               ? Math.round(face.smilingProbability * 100)
               : Math.round(face.qualityScore * 100);
 
+          const pose =
+            !isBaseFace && baseFace
+              ? evaluatePoseCompatibility(baseFace, face, 8)
+              : null;
+
           return (
             <TouchableOpacity
               key={face.id}
@@ -205,6 +232,9 @@ export function FaceSwitcherSheet({
                 <Text style={styles.photoLabel}>
                   {isBaseFace ? "Original" : `Photo #${photoNum}`}
                 </Text>
+                {pose && !pose.isCompatible && (
+                  <Text style={styles.angleWarningText}>⚠️ Turned</Text>
+                )}
               </View>
             </TouchableOpacity>
           );
@@ -420,6 +450,12 @@ const styles = StyleSheet.create({
     color: "#94a3b8",
     fontSize: 10,
     marginTop: 1,
+  },
+  angleWarningText: {
+    color: "#fbbf24",
+    fontSize: 9,
+    fontWeight: "700",
+    marginTop: 2,
   },
   blendingOverlay: {
     position: "absolute",

@@ -190,10 +190,35 @@ export async function runFaceDetectionPipeline(
       stage: "clustering",
     });
 
+    // Automatically select the base photo where most people look good and head poses are central
+    let activeBasePhotoId = session.basePhotoId;
+    if (session.photos.length > 1) {
+      const photoScores = session.photos.map((p) => {
+        const pFaces = allFaces.filter((f) => f.photoId === p.id);
+        if (pFaces.length === 0) return { id: p.id, score: -1 };
+        const avgQuality =
+          pFaces.reduce((sum, f) => sum + f.qualityScore, 0) / pFaces.length;
+        const avgCentrality =
+          pFaces.reduce((sum, f) => {
+            const poseOffset =
+              Math.abs(f.headEulerAngleX || 0) +
+              Math.abs(f.headEulerAngleY || 0);
+            return sum + Math.max(0, 1 - poseOffset / 30);
+          }, 0) / pFaces.length;
+        const score = pFaces.length * 2 + avgQuality * 1.5 + avgCentrality;
+        return { id: p.id, score };
+      });
+      photoScores.sort((a, b) => b.score - a.score);
+      if (photoScores[0] && photoScores[0].score > 0) {
+        activeBasePhotoId = photoScores[0].id;
+        useSessionStore.getState().setBasePhoto(activeBasePhotoId);
+      }
+    }
+
     const currentThreshold = useSessionStore.getState().clusteringThreshold;
     const { persons, updatedFaces } = clusterFacesIntoPersons(
       allFaces,
-      session.basePhotoId,
+      activeBasePhotoId,
       { similarityThreshold: currentThreshold }
     );
 

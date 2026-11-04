@@ -116,6 +116,90 @@ export function computeBoundingBoxFallbackMatrix(
   ];
 }
 
+export function computeSimilarityTransform(
+  srcPoints: NormalizedPoint[],
+  dstPoints: NormalizedPoint[]
+): number[] | null {
+  if (
+    !srcPoints ||
+    !dstPoints ||
+    srcPoints.length < 2 ||
+    srcPoints.length !== dstPoints.length
+  ) {
+    return null;
+  }
+
+  const n = srcPoints.length;
+  let meanSrcX = 0;
+  let meanSrcY = 0;
+  let meanDstX = 0;
+  let meanDstY = 0;
+
+  for (let i = 0; i < n; i++) {
+    meanSrcX += srcPoints[i].x;
+    meanSrcY += srcPoints[i].y;
+    meanDstX += dstPoints[i].x;
+    meanDstY += dstPoints[i].y;
+  }
+  meanSrcX /= n;
+  meanSrcY /= n;
+  meanDstX /= n;
+  meanDstY /= n;
+
+  let varSrc = 0;
+  let cxx = 0;
+  let cxy = 0;
+  let cyx = 0;
+  let cyy = 0;
+
+  for (let i = 0; i < n; i++) {
+    const sx = srcPoints[i].x - meanSrcX;
+    const sy = srcPoints[i].y - meanSrcY;
+    const dx = dstPoints[i].x - meanDstX;
+    const dy = dstPoints[i].y - meanDstY;
+
+    varSrc += sx * sx + sy * sy;
+    cxx += sx * dx;
+    cxy += sx * dy;
+    cyx += sy * dx;
+    cyy += sy * dy;
+  }
+
+  if (varSrc < 1e-9) {
+    return null;
+  }
+
+  const num = cxy - cyx;
+  const den = cxx + cyy;
+  const theta = Math.atan2(num, den);
+
+  const cosT = Math.cos(theta);
+  const sinT = Math.sin(theta);
+
+  const rawScale = (den * cosT + num * sinT) / varSrc;
+  const scale = Math.max(0.2, Math.min(5.0, rawScale));
+
+  const a = scale * cosT;
+  const b = scale * sinT;
+  const c = -b;
+  const d = a;
+
+  const tx = meanDstX - (a * meanSrcX + c * meanSrcY);
+  const ty = meanDstY - (b * meanSrcX + d * meanSrcY);
+
+  return [
+    Number(a.toFixed(6)),
+    Number(c.toFixed(6)),
+    Number(tx.toFixed(6)),
+    Number(b.toFixed(6)),
+    Number(d.toFixed(6)),
+    Number(ty.toFixed(6)),
+    0,
+    0,
+    1,
+  ];
+}
+
 export function computeAffineAlignment(
   donorFace: DetectedFace,
   baseFace: DetectedFace
@@ -124,43 +208,50 @@ export function computeAffineAlignment(
   const bLandmarks = baseFace.landmarks;
 
   if (dLandmarks && bLandmarks) {
-    const dLeft = dLandmarks.leftEye;
-    const dRight = dLandmarks.rightEye;
-    const bLeft = bLandmarks.leftEye;
-    const bRight = bLandmarks.rightEye;
+    const donorPairs: NormalizedPoint[] = [];
+    const basePairs: NormalizedPoint[] = [];
 
-    let dThird: NormalizedPoint | undefined;
-    let bThird: NormalizedPoint | undefined;
+    if (dLandmarks.leftEye && bLandmarks.leftEye) {
+      donorPairs.push(dLandmarks.leftEye);
+      basePairs.push(bLandmarks.leftEye);
+    }
+    if (dLandmarks.rightEye && bLandmarks.rightEye) {
+      donorPairs.push(dLandmarks.rightEye);
+      basePairs.push(bLandmarks.rightEye);
+    }
+    if (dLandmarks.nose && bLandmarks.nose) {
+      donorPairs.push(dLandmarks.nose);
+      basePairs.push(bLandmarks.nose);
+    }
+    if (dLandmarks.mouthLeft && bLandmarks.mouthLeft) {
+      donorPairs.push(dLandmarks.mouthLeft);
+      basePairs.push(bLandmarks.mouthLeft);
+    }
+    if (dLandmarks.mouthRight && bLandmarks.mouthRight) {
+      donorPairs.push(dLandmarks.mouthRight);
+      basePairs.push(bLandmarks.mouthRight);
+    }
 
-    if (dLandmarks.mouthLeft && dLandmarks.mouthRight) {
-      dThird = {
+    if (
+      dLandmarks.mouthLeft &&
+      dLandmarks.mouthRight &&
+      bLandmarks.mouthLeft &&
+      bLandmarks.mouthRight
+    ) {
+      donorPairs.push({
         x: (dLandmarks.mouthLeft.x + dLandmarks.mouthRight.x) / 2,
         y: (dLandmarks.mouthLeft.y + dLandmarks.mouthRight.y) / 2,
-      };
-    } else if (dLandmarks.nose) {
-      dThird = dLandmarks.nose;
-    }
-
-    if (bLandmarks.mouthLeft && bLandmarks.mouthRight) {
-      bThird = {
+      });
+      basePairs.push({
         x: (bLandmarks.mouthLeft.x + bLandmarks.mouthRight.x) / 2,
         y: (bLandmarks.mouthLeft.y + bLandmarks.mouthRight.y) / 2,
-      };
-    } else if (bLandmarks.nose) {
-      bThird = bLandmarks.nose;
+      });
     }
 
-    if (dLeft && dRight && dThird && bLeft && bRight && bThird) {
-      const matrix = compute3PointAffineMatrix(
-        dLeft,
-        dRight,
-        dThird,
-        bLeft,
-        bRight,
-        bThird
-      );
-      if (matrix) {
-        return matrix;
+    if (donorPairs.length >= 2) {
+      const similarityMatrix = computeSimilarityTransform(donorPairs, basePairs);
+      if (similarityMatrix) {
+        return similarityMatrix;
       }
     }
   }

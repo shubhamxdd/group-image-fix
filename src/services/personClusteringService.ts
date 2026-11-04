@@ -1,5 +1,6 @@
 import * as Crypto from "expo-crypto";
 import { DetectedFace, Person } from "../types/detection";
+import { evaluatePoseCompatibility } from "./facePoseService";
 import { cosineSimilarity, computeCentroid } from "./faceEmbeddingService";
 import { calculateIoU } from "./faceDetectionService";
 
@@ -301,12 +302,23 @@ export function clusterFacesIntoPersons(
     let altSumX = 0;
     let altCount = 0;
 
+    const baseFaceId = basePhotoId
+      ? c.faceIds.find((id) => faceMap[id]?.photoId === basePhotoId)
+      : undefined;
+    const baseFace = baseFaceId ? faceMap[baseFaceId] : undefined;
+
     for (const faceId of c.faceIds) {
       const face = faceMap[faceId];
       if (!face) continue;
 
-      if (face.qualityScore > highestScore) {
-        highestScore = face.qualityScore;
+      let effectiveScore = face.qualityScore;
+      if (baseFace && face.id !== baseFace.id) {
+        const pose = evaluatePoseCompatibility(baseFace, face, 8);
+        effectiveScore = pose.isCompatible ? pose.adjustedScore : -1;
+      }
+
+      if (effectiveScore > highestScore) {
+        highestScore = effectiveScore;
         bestFaceId = face.id;
       }
 
@@ -317,6 +329,10 @@ export function clusterFacesIntoPersons(
         altSumX += centerX;
         altCount++;
       }
+    }
+
+    if (!bestFaceId && c.faceIds.length > 0) {
+      bestFaceId = baseFaceId || c.faceIds[0];
     }
 
     let sortKey: number;
