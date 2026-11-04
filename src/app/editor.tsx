@@ -25,6 +25,7 @@ export default function EditorScreen() {
 
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [isComparing, setIsComparing] = useState<boolean>(false);
+  const [showOutlines, setShowOutlines] = useState<boolean>(true);
 
   // Export modal state
   const [exportModalVisible, setExportModalVisible] = useState<boolean>(false);
@@ -187,6 +188,8 @@ export default function EditorScreen() {
           persons={session.persons}
           activePersonId={selectedPersonId}
           isComparing={isComparing}
+          showOutlines={showOutlines}
+          onToggleOutlines={() => setShowOutlines((prev) => !prev)}
           activeSwaps={activeSwaps}
           onSelectPerson={(personId) => setSelectedPersonId(personId)}
         />
@@ -208,9 +211,11 @@ export default function EditorScreen() {
         />
       ) : (
         <View style={styles.hintDock}>
-          <Text style={styles.hintDockIcon}>👆</Text>
+          <Text style={styles.hintDockIcon}>{showOutlines ? "👆" : "👁️"}</Text>
           <Text style={styles.hintDockText}>
-            Tap any highlighted face to pick an alternate expression
+            {showOutlines
+              ? "Tap any highlighted face to pick an alternate expression"
+              : "Outlines hidden for inspection. Tap Outlines On above to select faces"}
           </Text>
         </View>
       )}
