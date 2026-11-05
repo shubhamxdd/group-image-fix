@@ -3,8 +3,11 @@ import * as MediaLibrary from "expo-media-library/legacy";
 import type { SkImage } from "@shopify/react-native-skia";
 import { Session, Photo } from "../types/session";
 import { DetectedFace } from "../types/detection";
-import { getPixelAffineMatrix } from "./faceAlignmentService";
-import { matchFaceToneWithSkia } from "./faceColorMatchService";
+import {
+  computeFaceAlignmentMatrix,
+  computeBlendMaskGeometry,
+} from "./faceAlignmentService";
+import { computeSkinToneColorMatrix } from "./faceColorMatchService";
 
 async function loadSkiaImageFromUri(uri: string): Promise<SkImage | null> {
   try {
@@ -131,10 +134,18 @@ export async function exportFullResolutionComposite(
     const maskEffect = Skia.RuntimeEffect.Make(`
       uniform vec2 uCenter;
       uniform vec2 uRadii;
+      uniform float uAngle;
       uniform float uFeather;
 
       vec4 main(vec2 xy) {
-        vec2 d = (xy - uCenter) / uRadii;
+        vec2 delta = xy - uCenter;
+        float cosA = cos(-uAngle);
+        float sinA = sin(-uAngle);
+        vec2 rotatedDelta = vec2(
+          delta.x * cosA - delta.y * sinA,
+          delta.x * sinA + delta.y * cosA
+        );
+        vec2 d = rotatedDelta / uRadii;
         float dist = length(d);
         if (dist >= 1.0) {
           return vec4(0.0);
@@ -144,7 +155,7 @@ export async function exportFullResolutionComposite(
           return vec4(1.0);
         }
         float t = (dist - inner) / max(0.001, uFeather);
-        float alpha = 0.5 + 0.5 * cos(3.14159265 * t);
+        float alpha = 0.5 + 0.5 * cos(3.1415926535 * t);
         return vec4(alpha);
       }
     `);
@@ -162,50 +173,49 @@ export async function exportFullResolutionComposite(
         continue;
       }
 
-      let donorOriginal = await loadSkiaImageFromUri(donorPhoto.originalUri);
+      const donorOriginal = await loadSkiaImageFromUri(donorPhoto.originalUri);
       if (!donorOriginal) {
         continue;
-      }
-
-      if (swap.blendParams.colorTransferEnabled) {
-        const toneAdjusted = await matchFaceToneWithSkia(
-          donorOriginal,
-          donorFace.bounds,
-          baseOriginal,
-          baseFace.bounds
-        );
-        if (toneAdjusted) {
-          donorOriginal = toneAdjusted;
-        }
       }
 
       const donorW = donorOriginal.width();
       const donorH = donorOriginal.height();
 
-      const pixelMatrixValues = getPixelAffineMatrix(
-        swap.blendParams.affineMatrix,
+      const pixelMatrixValues = computeFaceAlignmentMatrix(
+        donorFace,
+        baseFace,
         donorW,
         donorH,
         origW,
         origH
       );
-
       const skiaMatrix = Skia.Matrix(pixelMatrixValues);
 
-      const targetCenterX =
-        (baseFace.bounds.x + baseFace.bounds.width / 2) * origW;
-      const targetCenterY =
-        (baseFace.bounds.y + baseFace.bounds.height / 2) * origH;
+      const maskGeom = computeBlendMaskGeometry(
+        baseFace,
+        origW,
+        origH,
+        swap.blendParams.featherRadius ?? 0.35
+      );
 
-      const radiusX = (baseFace.bounds.width * 0.58) * origW;
-      const radiusY = (baseFace.bounds.height * 0.68) * origH;
-      const featherRadius = Math.max(0.1, Math.min(0.5, swap.blendParams.featherRadius));
+      const donorPaint = Skia.Paint();
+      if (swap.blendParams.colorTransferEnabled) {
+        const colorMatrix = await computeSkinToneColorMatrix(
+          donorOriginal,
+          donorFace,
+          baseOriginal,
+          baseFace
+        );
+        if (colorMatrix) {
+          donorPaint.setColorFilter(Skia.ColorFilter.MakeMatrix(colorMatrix));
+        }
+      }
 
       canvas.saveLayer();
 
       canvas.save();
       canvas.concat(skiaMatrix);
-      canvas.drawImage(donorOriginal, 0, 0, basePaint);
+      canvas.drawImage(donorOriginal, 0, 0, donorPaint);
       canvas.restore();
 
       const maskPaint = Skia.Paint();
@@ -213,28 +223,36 @@ export async function exportFullResolutionComposite(
 
       if (maskEffect) {
         const maskShader = maskEffect.makeShader([
-          targetCenterX,
-          targetCenterY,
-          radiusX,
-          radiusY,
-          featherRadius,
+          maskGeom.centerX,
+          maskGeom.centerY,
+          maskGeom.radiusX,
+          maskGeom.radiusY,
+          maskGeom.rotationAngle,
+          maskGeom.featherRadius,
         ]);
         if (maskShader) {
           maskPaint.setShader(maskShader);
           canvas.drawRect(Skia.XYWHRect(0, 0, origW, origH), maskPaint);
         }
       } else {
-        const blurSigma = Math.max(8, Math.min(radiusX, radiusY) * featherRadius * 0.6);
+        const blurSigma = Math.max(
+          8,
+          Math.min(maskGeom.radiusX, maskGeom.radiusY) * maskGeom.featherRadius * 0.6
+        );
         maskPaint.setMaskFilter(
           Skia.MaskFilter.MakeBlur(BlurStyle.Normal, blurSigma, true)
         );
+        canvas.save();
+        canvas.translate(maskGeom.centerX, maskGeom.centerY);
+        canvas.rotate((maskGeom.rotationAngle * 180) / Math.PI, 0, 0);
         const ovalRect = Skia.XYWHRect(
-          targetCenterX - radiusX,
-          targetCenterY - radiusY,
-          radiusX * 2,
-          radiusY * 2
+          -maskGeom.radiusX,
+          -maskGeom.radiusY,
+          maskGeom.radiusX * 2,
+          maskGeom.radiusY * 2
         );
         canvas.drawOval(ovalRect, maskPaint);
+        canvas.restore();
       }
 
       canvas.restore();
@@ -250,23 +268,26 @@ export async function exportFullResolutionComposite(
       encoding: FileSystem.EncodingType.Base64,
     });
 
-    onProgress?.(92, "Saving to photo gallery...");
-    const savedUri = await saveToGallery(exportFilePath);
+    onProgress?.(92, "Saving to media gallery...");
+    const savedAssetUri = await saveToGallery(exportFilePath);
 
     // Clean up temporary export file
     try {
       await FileSystem.deleteAsync(exportFilePath, { idempotent: true });
-    } catch (cleanupErr) {
-      console.warn("Could not delete temporary export file:", cleanupErr);
+    } catch {
+      // Ignore temporary file cleanup failure
     }
 
-    onProgress?.(100, "Saved successfully!");
-    return { success: true, assetUri: savedUri };
+    onProgress?.(100, "Export completed successfully!");
+    return {
+      success: true,
+      assetUri: savedAssetUri,
+    };
   } catch (err: any) {
     console.warn("Full resolution export failed:", err);
     return {
       success: false,
-      error: err?.message || "Failed to render and save full resolution composite.",
+      error: err?.message || "An unexpected error occurred during full resolution export.",
     };
   }
 }

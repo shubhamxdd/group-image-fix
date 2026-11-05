@@ -3,18 +3,29 @@ import type { SkImage, SkRuntimeEffect } from "@shopify/react-native-skia";
 import { BlendResult, FaceSwapSelection } from "../types/blend";
 import { DetectedFace } from "../types/detection";
 import { Photo, Session } from "../types/session";
-import { getPixelAffineMatrix } from "./faceAlignmentService";
-import { matchFaceToneWithSkia } from "./faceColorMatchService";
+import {
+  computeFaceAlignmentMatrix,
+  computeBlendMaskGeometry,
+} from "./faceAlignmentService";
+import { computeSkinToneColorMatrix } from "./faceColorMatchService";
 
-let cachedRuntimeEffect: SkRuntimeEffect | null = null;
+let cachedMaskEffect: SkRuntimeEffect | null = null;
 
-const ELLIPTICAL_MASK_SKSL = `
+const ROTATED_ELLIPTICAL_MASK_SKSL = `
 uniform vec2 uCenter;
 uniform vec2 uRadii;
+uniform float uAngle;
 uniform float uFeather;
 
 vec4 main(vec2 xy) {
-  vec2 d = (xy - uCenter) / uRadii;
+  vec2 delta = xy - uCenter;
+  float cosA = cos(-uAngle);
+  float sinA = sin(-uAngle);
+  vec2 rotatedDelta = vec2(
+    delta.x * cosA - delta.y * sinA,
+    delta.x * sinA + delta.y * cosA
+  );
+  vec2 d = rotatedDelta / uRadii;
   float dist = length(d);
   if (dist >= 1.0) {
     return vec4(0.0);
@@ -24,21 +35,21 @@ vec4 main(vec2 xy) {
     return vec4(1.0);
   }
   float t = (dist - inner) / max(0.001, uFeather);
-  float alpha = 0.5 + 0.5 * cos(3.14159265 * t);
+  float alpha = 0.5 + 0.5 * cos(3.1415926535 * t);
   return vec4(alpha);
 }
 `;
 
 async function getOrCompileMaskEffect(): Promise<SkRuntimeEffect | null> {
-  if (cachedRuntimeEffect) {
-    return cachedRuntimeEffect;
+  if (cachedMaskEffect) {
+    return cachedMaskEffect;
   }
   try {
     const { Skia } = await import("@shopify/react-native-skia");
-    cachedRuntimeEffect = Skia.RuntimeEffect.Make(ELLIPTICAL_MASK_SKSL);
-    return cachedRuntimeEffect;
+    cachedMaskEffect = Skia.RuntimeEffect.Make(ROTATED_ELLIPTICAL_MASK_SKSL);
+    return cachedMaskEffect;
   } catch (err) {
-    console.warn("Could not compile elliptical mask shader:", err);
+    console.warn("Could not compile rotated elliptical mask shader:", err);
     return null;
   }
 }
@@ -106,7 +117,6 @@ export async function renderCompositePreview(
     const maskEffect = await getOrCompileMaskEffect();
     const photoMap = new Map<string, Photo>(session.photos.map((p) => [p.id, p]));
 
-    // Find base faces for each person to determine target location
     const baseFacesByPerson = new Map<string, DetectedFace>();
     for (const face of Object.values(session.detectedFaces)) {
       if (face.photoId === basePhoto.id && face.personId) {
@@ -123,85 +133,95 @@ export async function renderCompositePreview(
         continue;
       }
 
-      let donorImage = await loadSkiaImageFromUri(donorPhoto.proxyUri);
+      const donorImage = await loadSkiaImageFromUri(donorPhoto.proxyUri);
       if (!donorImage) {
         continue;
-      }
-
-      if (swap.blendParams.colorTransferEnabled) {
-        const colorMatched = await matchFaceToneWithSkia(
-          donorImage,
-          donorFace.bounds,
-          baseImage,
-          baseFace.bounds
-        );
-        if (colorMatched) {
-          donorImage = colorMatched;
-        }
       }
 
       const donorW = donorImage.width();
       const donorH = donorImage.height();
 
-      const pixelMatrixValues = getPixelAffineMatrix(
-        swap.blendParams.affineMatrix,
+      // Compute rigid similarity pixel matrix
+      const matrixValues = computeFaceAlignmentMatrix(
+        donorFace,
+        baseFace,
         donorW,
         donorH,
         baseW,
         baseH
       );
+      const skiaMatrix = Skia.Matrix(matrixValues);
 
-      const skiaMatrix = Skia.Matrix(pixelMatrixValues);
+      // Compute rotated elliptical mask geometry
+      const maskGeom = computeBlendMaskGeometry(
+        baseFace,
+        baseW,
+        baseH,
+        swap.blendParams.featherRadius ?? 0.35
+      );
 
-      const targetCenterX =
-        (baseFace.bounds.x + baseFace.bounds.width / 2) * baseW;
-      const targetCenterY =
-        (baseFace.bounds.y + baseFace.bounds.height / 2) * baseH;
+      // Setup donor paint with optional GPU color matching
+      const donorPaint = Skia.Paint();
+      if (swap.blendParams.colorTransferEnabled) {
+        const colorMatrix = await computeSkinToneColorMatrix(
+          donorImage,
+          donorFace,
+          baseImage,
+          baseFace
+        );
+        if (colorMatrix) {
+          donorPaint.setColorFilter(Skia.ColorFilter.MakeMatrix(colorMatrix));
+        }
+      }
 
-      const radiusX = (baseFace.bounds.width * 0.58) * baseW;
-      const radiusY = (baseFace.bounds.height * 0.68) * baseH;
-      const featherRadius = Math.max(0.1, Math.min(0.5, swap.blendParams.featherRadius));
-
-      // Create isolated scratch layer
+      // Draw isolated layer
       canvas.saveLayer();
 
-      // Draw transformed donor face inside layer
+      // Draw transformed donor
       canvas.save();
       canvas.concat(skiaMatrix);
-      canvas.drawImage(donorImage, 0, 0, basePaint);
+      canvas.drawImage(donorImage, 0, 0, donorPaint);
       canvas.restore();
 
-      // Mask with elliptical feathered alpha
+      // Apply feathered rotated elliptical mask
       const maskPaint = Skia.Paint();
       maskPaint.setBlendMode(BlendMode.DstIn);
 
       if (maskEffect) {
         const maskShader = maskEffect.makeShader([
-          targetCenterX,
-          targetCenterY,
-          radiusX,
-          radiusY,
-          featherRadius,
+          maskGeom.centerX,
+          maskGeom.centerY,
+          maskGeom.radiusX,
+          maskGeom.radiusY,
+          maskGeom.rotationAngle,
+          maskGeom.featherRadius,
         ]);
         if (maskShader) {
           maskPaint.setShader(maskShader);
           canvas.drawRect(Skia.XYWHRect(0, 0, baseW, baseH), maskPaint);
         }
       } else {
-        const blurSigma = Math.max(4, Math.min(radiusX, radiusY) * featherRadius * 0.6);
+        const blurSigma = Math.max(
+          6,
+          Math.min(maskGeom.radiusX, maskGeom.radiusY) * maskGeom.featherRadius * 0.6
+        );
         maskPaint.setMaskFilter(
           Skia.MaskFilter.MakeBlur(BlurStyle.Normal, blurSigma, true)
         );
+        canvas.save();
+        canvas.translate(maskGeom.centerX, maskGeom.centerY);
+        canvas.rotate((maskGeom.rotationAngle * 180) / Math.PI, 0, 0);
         const ovalRect = Skia.XYWHRect(
-          targetCenterX - radiusX,
-          targetCenterY - radiusY,
-          radiusX * 2,
-          radiusY * 2
+          -maskGeom.radiusX,
+          -maskGeom.radiusY,
+          maskGeom.radiusX * 2,
+          maskGeom.radiusY * 2
         );
         canvas.drawOval(ovalRect, maskPaint);
+        canvas.restore();
       }
 
-      // Merge masked layer onto base photo
+      // Merge masked donor onto composite
       canvas.restore();
     }
 
