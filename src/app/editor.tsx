@@ -22,6 +22,10 @@ export default function EditorScreen() {
   const setFaceSwap = useSessionStore((state) => state.setFaceSwap);
   const removeFaceSwap = useSessionStore((state) => state.removeFaceSwap);
   const renamePerson = useSessionStore((state) => state.renamePerson);
+  const canUndo = useSessionStore((state) => state.canUndo);
+  const canRedo = useSessionStore((state) => state.canRedo);
+  const undoSwap = useSessionStore((state) => state.undoSwap);
+  const redoSwap = useSessionStore((state) => state.redoSwap);
 
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [isComparing, setIsComparing] = useState<boolean>(false);
@@ -162,6 +166,44 @@ export default function EditorScreen() {
         </View>
 
         <View style={styles.headerRightActions}>
+          <TouchableOpacity
+            style={[styles.historyButton, !canUndo && styles.historyButtonDisabled]}
+            onPress={undoSwap}
+            disabled={!canUndo}
+            hitSlop={6}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Undo last face swap"
+          >
+            <Text
+              style={[
+                styles.historyButtonIcon,
+                !canUndo && styles.historyButtonIconDisabled,
+              ]}
+            >
+              ↶
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.historyButton, !canRedo && styles.historyButtonDisabled]}
+            onPress={redoSwap}
+            disabled={!canRedo}
+            hitSlop={6}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Redo face swap"
+          >
+            <Text
+              style={[
+                styles.historyButtonIcon,
+                !canRedo && styles.historyButtonIconDisabled,
+              ]}
+            >
+              ↷
+            </Text>
+          </TouchableOpacity>
+
           <CompareButton
             isComparing={isComparing}
             onCompareStart={() => setIsComparing(true)}
@@ -274,7 +316,30 @@ const styles = StyleSheet.create({
   headerRightActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
+  },
+  historyButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "rgba(30, 41, 59, 0.8)",
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  historyButtonDisabled: {
+    opacity: 0.35,
+    backgroundColor: "rgba(30, 41, 59, 0.3)",
+    borderColor: "transparent",
+  },
+  historyButtonIcon: {
+    color: "#f8fafc",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  historyButtonIconDisabled: {
+    color: "#64748b",
   },
   exportButton: {
     backgroundColor: "#0284c7",

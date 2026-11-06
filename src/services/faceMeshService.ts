@@ -195,9 +195,26 @@ export async function createFaceContourSkPath(
 
   try {
     const { Skia } = await import("@shopify/react-native-skia");
-    const path = Skia.Path.Make();
-
     const first = contourPoints[0];
+
+    // Use modern Skia.PathBuilder to avoid deprecation warnings in Skia 2.6+
+    if (Skia.PathBuilder && typeof Skia.PathBuilder.Make === "function") {
+      const builder = Skia.PathBuilder.Make();
+      builder.moveTo(first.x * canvasW, first.y * canvasH);
+
+      for (let i = 1; i < contourPoints.length; i++) {
+        const pt = contourPoints[i];
+        builder.lineTo(pt.x * canvasW, pt.y * canvasH);
+      }
+
+      builder.close();
+      return typeof builder.build === "function"
+        ? builder.build()
+        : (builder as any).detach();
+    }
+
+    // Graceful fallback for older Skia versions
+    const path = Skia.Path.Make();
     path.moveTo(first.x * canvasW, first.y * canvasH);
 
     for (let i = 1; i < contourPoints.length; i++) {

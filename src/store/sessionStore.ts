@@ -24,6 +24,16 @@ interface SessionState {
   blendSequenceToken: number;
   processAtFullResolution: boolean;
 
+  undoStack: Record<string, FaceSwapSelection>[];
+  redoStack: Record<string, FaceSwapSelection>[];
+  canUndo: boolean;
+  canRedo: boolean;
+  undoSwap: () => Promise<BlendResult | null>;
+  redoSwap: () => Promise<BlendResult | null>;
+  applySwapsAndRender: (
+    updatedSwaps: Record<string, FaceSwapSelection>
+  ) => Promise<BlendResult | null>;
+
   setProcessAtFullResolution: (enabled: boolean) => void;
   startImport: (sessionId: string) => { sessionId: string; token: number };
   setSessionReady: (session: Session, token: number) => boolean;
@@ -59,6 +69,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   clusteringThreshold: DEFAULT_SIMILARITY_THRESHOLD,
   blendSequenceToken: 0,
   processAtFullResolution: true,
+  undoStack: [],
+  redoStack: [],
+  canUndo: false,
+  canRedo: false,
 
   setProcessAtFullResolution: (enabled: boolean) => {
     set({ processAtFullResolution: enabled });
@@ -80,7 +94,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       activeBlendPreviewUri: null,
       isBlending: false,
     };
-    set({ session: newSession, activeToken: nextToken });
+    set({
+      session: newSession,
+      activeToken: nextToken,
+      undoStack: [],
+      redoStack: [],
+      canUndo: false,
+      canRedo: false,
+    });
     return { sessionId, token: nextToken };
   },
 
@@ -234,94 +255,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     });
   },
 
-  setFaceSwap: async (
-    personId: string,
-    donorFaceId: string,
-    options?: { featherRadius?: number; colorTransferEnabled?: boolean }
+  applySwapsAndRender: async (
+    updatedSwaps: Record<string, FaceSwapSelection>
   ) => {
-    const current = get().session;
-    if (!current || !current.basePhotoId) {
-      return null;
-    }
-
-    const donorFace = current.detectedFaces[donorFaceId];
-    if (!donorFace) {
-      return null;
-    }
-
-    const baseFace = Object.values(current.detectedFaces).find(
-      (f) => f.photoId === current.basePhotoId && f.personId === personId
-    );
-
-    if (!baseFace) {
-      return null;
-    }
-
-    // Selecting the face from the base photo reverts the swap
-    if (donorFace.id === baseFace.id) {
-      return get().removeFaceSwap(personId);
-    }
-
-    const affineMatrix = computeAffineAlignment(donorFace, baseFace);
-    const selection: FaceSwapSelection = {
-      personId,
-      donorFaceId,
-      donorPhotoId: donorFace.photoId,
-      blendParams: {
-        affineMatrix,
-        featherRadius: options?.featherRadius ?? 0.25,
-        colorTransferEnabled: options?.colorTransferEnabled ?? true,
-      },
-      appliedAt: Date.now(),
-    };
-
-    const updatedSwaps = {
-      ...current.swaps,
-      [personId]: selection,
-    };
-
-    const callToken = get().blendSequenceToken + 1;
-    set({
-      blendSequenceToken: callToken,
-      session: {
-        ...current,
-        swaps: updatedSwaps,
-        isBlending: true,
-      },
-    });
-
-    const blendResult = await renderCompositePreview(
-      { ...current, swaps: updatedSwaps },
-      updatedSwaps
-    );
-
-    if (get().blendSequenceToken === callToken) {
-      const activeSession = get().session;
-      if (activeSession && activeSession.id === current.id) {
-        const previewWithCacheBuster = blendResult?.previewUri
-          ? `${blendResult.previewUri}?t=${Date.now()}`
-          : null;
-        set({
-          session: {
-            ...activeSession,
-            activeBlendPreviewUri: previewWithCacheBuster,
-            isBlending: false,
-          },
-        });
-      }
-    }
-
-    return blendResult;
-  },
-
-  removeFaceSwap: async (personId: string) => {
     const current = get().session;
     if (!current) {
       return null;
     }
-
-    const updatedSwaps = { ...current.swaps };
-    delete updatedSwaps[personId];
 
     const callToken = get().blendSequenceToken + 1;
     set({
@@ -359,21 +299,142 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     return blendResult;
   },
 
+  setFaceSwap: async (
+    personId: string,
+    donorFaceId: string,
+    options?: { featherRadius?: number; colorTransferEnabled?: boolean }
+  ) => {
+    const current = get().session;
+    if (!current || !current.basePhotoId) {
+      return null;
+    }
+
+    const donorFace = current.detectedFaces[donorFaceId];
+    if (!donorFace) {
+      return null;
+    }
+
+    const baseFace = Object.values(current.detectedFaces).find(
+      (f) => f.photoId === current.basePhotoId && f.personId === personId
+    );
+
+    if (!baseFace) {
+      return null;
+    }
+
+    // Selecting the face from the base photo reverts the swap
+    if (donorFace.id === baseFace.id) {
+      return get().removeFaceSwap(personId);
+    }
+
+    const affineMatrix = computeAffineAlignment(donorFace, baseFace);
+    const selection: FaceSwapSelection = {
+      personId,
+      donorFaceId,
+      donorPhotoId: donorFace.photoId,
+      blendParams: {
+        affineMatrix,
+        featherRadius: options?.featherRadius ?? 0.35,
+        colorTransferEnabled: options?.colorTransferEnabled ?? true,
+      },
+      appliedAt: Date.now(),
+    };
+
+    const prevSwaps = { ...current.swaps };
+    const updatedSwaps = {
+      ...current.swaps,
+      [personId]: selection,
+    };
+
+    const nextUndo = [...get().undoStack, prevSwaps].slice(-30);
+    set({
+      undoStack: nextUndo,
+      redoStack: [],
+      canUndo: true,
+      canRedo: false,
+    });
+
+    return get().applySwapsAndRender(updatedSwaps);
+  },
+
+  removeFaceSwap: async (personId: string) => {
+    const current = get().session;
+    if (!current) {
+      return null;
+    }
+
+    const prevSwaps = { ...current.swaps };
+    const updatedSwaps = { ...current.swaps };
+    delete updatedSwaps[personId];
+
+    const nextUndo = [...get().undoStack, prevSwaps].slice(-30);
+    set({
+      undoStack: nextUndo,
+      redoStack: [],
+      canUndo: true,
+      canRedo: false,
+    });
+
+    return get().applySwapsAndRender(updatedSwaps);
+  },
+
   revertAllSwaps: async () => {
     const current = get().session;
     if (!current) {
       return;
     }
-    const callToken = get().blendSequenceToken + 1;
+    const prevSwaps = { ...current.swaps };
+    const nextUndo = [...get().undoStack, prevSwaps].slice(-30);
     set({
-      blendSequenceToken: callToken,
-      session: {
-        ...current,
-        swaps: {},
-        activeBlendPreviewUri: null,
-        isBlending: false,
-      },
+      undoStack: nextUndo,
+      redoStack: [],
+      canUndo: true,
+      canRedo: false,
     });
+
+    await get().applySwapsAndRender({});
+  },
+
+  undoSwap: async () => {
+    const current = get().session;
+    const undoStack = get().undoStack;
+    if (!current || undoStack.length === 0) {
+      return null;
+    }
+
+    const previousSwaps = undoStack[undoStack.length - 1];
+    const nextUndo = undoStack.slice(0, -1);
+    const nextRedo = [...get().redoStack, { ...current.swaps }].slice(-30);
+
+    set({
+      undoStack: nextUndo,
+      redoStack: nextRedo,
+      canUndo: nextUndo.length > 0,
+      canRedo: true,
+    });
+
+    return get().applySwapsAndRender(previousSwaps);
+  },
+
+  redoSwap: async () => {
+    const current = get().session;
+    const redoStack = get().redoStack;
+    if (!current || redoStack.length === 0) {
+      return null;
+    }
+
+    const nextSwaps = redoStack[redoStack.length - 1];
+    const nextRedo = redoStack.slice(0, -1);
+    const nextUndo = [...get().undoStack, { ...current.swaps }].slice(-30);
+
+    set({
+      undoStack: nextUndo,
+      redoStack: nextRedo,
+      canUndo: true,
+      canRedo: nextRedo.length > 0,
+    });
+
+    return get().applySwapsAndRender(nextSwaps);
   },
 
   setBlendParameters: async (
@@ -454,7 +515,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   resetSession: async () => {
     const current = get().session;
     const nextToken = get().activeToken + 1;
-    set({ session: null, activeToken: nextToken });
+    set({
+      session: null,
+      activeToken: nextToken,
+      undoStack: [],
+      redoStack: [],
+      canUndo: false,
+      canRedo: false,
+    });
 
     if (current && FileSystem.cacheDirectory) {
       const sessionDir = `${FileSystem.cacheDirectory}sessions/${current.id}/`;
