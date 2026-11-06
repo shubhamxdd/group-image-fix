@@ -2,6 +2,7 @@
   "name": "img-gp",
   "main": "expo-router/entry",
   "version": "1.0.0",
+  "packageManager": "bun@1.4.3",
   "dependencies": {
     "@expo/ui": "~57.0.26",
     "@react-native-ml-kit/face-detection": "^2.0.1",
