@@ -175,18 +175,13 @@ export async function renderCompositePreview(
         }
       }
 
-      // Draw isolated layer
+      // Render isolated face swap onto a clean offscreen layer
       canvas.saveLayer();
 
-      // Draw transformed donor
-      canvas.save();
-      canvas.concat(skiaMatrix);
-      canvas.drawImage(donorImage, 0, 0, donorPaint);
-      canvas.restore();
-
-      // Apply feathered mask (contour path if available, or rotated ellipse shader)
+      // Step 1: Draw feathered blend mask into transparent layer
       const maskPaint = Skia.Paint();
-      maskPaint.setBlendMode(BlendMode.DstIn);
+      maskPaint.setAntiAlias(true);
+      maskPaint.setColor(Skia.Color("#ffffff"));
 
       let usedContourMask = false;
       if (baseFace.contourPoints && baseFace.contourPoints.length >= 3) {
@@ -244,7 +239,14 @@ export async function renderCompositePreview(
         }
       }
 
-      // Merge masked donor onto composite
+      // Step 2: Draw transformed donor face with SrcIn so ONLY pixels inside the mask are retained
+      donorPaint.setBlendMode(BlendMode.SrcIn);
+      canvas.save();
+      canvas.concat(skiaMatrix);
+      canvas.drawImage(donorImage, 0, 0, donorPaint);
+      canvas.restore();
+
+      // Step 3: Composite isolated feathered face onto composite
       canvas.restore();
     }
 
