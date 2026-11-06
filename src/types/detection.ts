@@ -33,6 +33,8 @@ export interface DetectedFace {
   qualityScore: number;
   embedding?: number[];
   cropUri?: string;
+  meshPoints?: NormalizedPoint[];
+  contourPoints?: NormalizedPoint[];
 }
 
 export interface Person {

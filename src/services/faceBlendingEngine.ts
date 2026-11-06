@@ -8,6 +8,7 @@ import {
   computeBlendMaskGeometry,
 } from "./faceAlignmentService";
 import { computeSkinToneColorMatrix } from "./faceColorMatchService";
+import { createFaceContourSkPath } from "./faceMeshService";
 
 let cachedMaskEffect: SkRuntimeEffect | null = null;
 
@@ -183,42 +184,64 @@ export async function renderCompositePreview(
       canvas.drawImage(donorImage, 0, 0, donorPaint);
       canvas.restore();
 
-      // Apply feathered rotated elliptical mask
+      // Apply feathered mask (contour path if available, or rotated ellipse shader)
       const maskPaint = Skia.Paint();
       maskPaint.setBlendMode(BlendMode.DstIn);
 
-      if (maskEffect) {
-        const maskShader = maskEffect.makeShader([
-          maskGeom.centerX,
-          maskGeom.centerY,
-          maskGeom.radiusX,
-          maskGeom.radiusY,
-          maskGeom.rotationAngle,
-          maskGeom.featherRadius,
-        ]);
-        if (maskShader) {
-          maskPaint.setShader(maskShader);
-          canvas.drawRect(Skia.XYWHRect(0, 0, baseW, baseH), maskPaint);
+      let usedContourMask = false;
+      if (baseFace.contourPoints && baseFace.contourPoints.length >= 3) {
+        const contourPath = await createFaceContourSkPath(
+          baseFace.contourPoints,
+          baseW,
+          baseH
+        );
+        if (contourPath) {
+          const blurSigma = Math.max(
+            6,
+            Math.min(maskGeom.radiusX, maskGeom.radiusY) * (swap.blendParams.featherRadius ?? 0.35) * 0.5
+          );
+          maskPaint.setMaskFilter(
+            Skia.MaskFilter.MakeBlur(BlurStyle.Normal, blurSigma, true)
+          );
+          canvas.drawPath(contourPath, maskPaint);
+          usedContourMask = true;
         }
-      } else {
-        const blurSigma = Math.max(
-          6,
-          Math.min(maskGeom.radiusX, maskGeom.radiusY) * maskGeom.featherRadius * 0.6
-        );
-        maskPaint.setMaskFilter(
-          Skia.MaskFilter.MakeBlur(BlurStyle.Normal, blurSigma, true)
-        );
-        canvas.save();
-        canvas.translate(maskGeom.centerX, maskGeom.centerY);
-        canvas.rotate((maskGeom.rotationAngle * 180) / Math.PI, 0, 0);
-        const ovalRect = Skia.XYWHRect(
-          -maskGeom.radiusX,
-          -maskGeom.radiusY,
-          maskGeom.radiusX * 2,
-          maskGeom.radiusY * 2
-        );
-        canvas.drawOval(ovalRect, maskPaint);
-        canvas.restore();
+      }
+
+      if (!usedContourMask) {
+        if (maskEffect) {
+          const maskShader = maskEffect.makeShader([
+            maskGeom.centerX,
+            maskGeom.centerY,
+            maskGeom.radiusX,
+            maskGeom.radiusY,
+            maskGeom.rotationAngle,
+            maskGeom.featherRadius,
+          ]);
+          if (maskShader) {
+            maskPaint.setShader(maskShader);
+            canvas.drawRect(Skia.XYWHRect(0, 0, baseW, baseH), maskPaint);
+          }
+        } else {
+          const blurSigma = Math.max(
+            6,
+            Math.min(maskGeom.radiusX, maskGeom.radiusY) * maskGeom.featherRadius * 0.6
+          );
+          maskPaint.setMaskFilter(
+            Skia.MaskFilter.MakeBlur(BlurStyle.Normal, blurSigma, true)
+          );
+          canvas.save();
+          canvas.translate(maskGeom.centerX, maskGeom.centerY);
+          canvas.rotate((maskGeom.rotationAngle * 180) / Math.PI, 0, 0);
+          const ovalRect = Skia.XYWHRect(
+            -maskGeom.radiusX,
+            -maskGeom.radiusY,
+            maskGeom.radiusX * 2,
+            maskGeom.radiusY * 2
+          );
+          canvas.drawOval(ovalRect, maskPaint);
+          canvas.restore();
+        }
       }
 
       // Merge masked donor onto composite

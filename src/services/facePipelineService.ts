@@ -8,6 +8,10 @@ import {
   extractFaceEmbeddingFromSkia,
   getOrLoadMobileFaceNetModel,
 } from "./faceEmbeddingService";
+import {
+  extractFaceMeshFromSkia,
+  getOrLoadFaceMeshModel,
+} from "./faceMeshService";
 import { clusterFacesIntoPersons } from "./personClusteringService";
 
 async function mapWithConcurrency<T, R>(
@@ -109,7 +113,8 @@ export async function runFaceDetectionPipeline(
     });
 
     const model = await getOrLoadMobileFaceNetModel();
-    console.log("[DetectionPipeline] Model loaded:", !!model);
+    const meshModel = await getOrLoadFaceMeshModel();
+    console.log("[DetectionPipeline] Models loaded - MobileFaceNet:", !!model, "FaceMesh:", !!meshModel);
 
     if (model) {
       // Dynamically load Skia to avoid top-level evaluation crashes
@@ -167,6 +172,22 @@ export async function runFaceDetectionPipeline(
                 }
               } catch (embErr) {
                 console.warn("Face embedding extraction error:", embErr);
+              }
+
+              if (meshModel) {
+                try {
+                  const meshResult = await extractFaceMeshFromSkia(
+                    skiaImage,
+                    face.bounds,
+                    meshModel
+                  );
+                  if (meshResult) {
+                    face.meshPoints = meshResult.meshPoints;
+                    face.contourPoints = meshResult.contourPoints;
+                  }
+                } catch (meshErr) {
+                  console.warn("Face mesh extraction error:", meshErr);
+                }
               }
 
               processedFaceCount++;
