@@ -15,9 +15,11 @@ import { FaceSwitcherSheet } from "../components/FaceSwitcherSheet";
 import { CompareButton } from "../components/CompareButton";
 import { ExportModal, ExportStatus } from "../components/ExportModal";
 import { exportFullResolutionComposite } from "../services/faceExportService";
+import { useTheme } from "../store/themeStore";
 
 export default function EditorScreen() {
   const insets = useSafeAreaInsets();
+  const { colors, isDark, toggleTheme } = useTheme();
   const session = useSessionStore((state) => state.session);
   const setFaceSwap = useSessionStore((state) => state.setFaceSwap);
   const removeFaceSwap = useSessionStore((state) => state.removeFaceSwap);
@@ -39,6 +41,7 @@ export default function EditorScreen() {
   const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(
     null
   );
+  const [exportedAssetUri, setExportedAssetUri] = useState<string | null>(null);
 
   if (!session || !session.basePhotoId || session.photos.length === 0) {
     return (
@@ -111,6 +114,7 @@ export default function EditorScreen() {
     setExportProgress(10);
     setExportStageText("Preparing full resolution render...");
     setExportErrorMessage(null);
+    setExportedAssetUri(null);
 
     try {
       const result = await exportFullResolutionComposite(
@@ -122,6 +126,7 @@ export default function EditorScreen() {
       );
 
       if (result.success) {
+        setExportedAssetUri(result.assetUri ?? null);
         setExportStatus("success");
         setExportProgress(100);
       } else {
@@ -137,30 +142,48 @@ export default function EditorScreen() {
   }
 
   return (
-    <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
+      <StatusBar
+        barStyle={isDark ? "light-content" : "dark-content"}
+        backgroundColor={colors.headerBg}
+      />
 
       {/* Top action header */}
       <View
         style={[
           styles.headerBar,
-          { paddingTop: Math.max(12, insets.top) },
+          {
+            paddingTop: Math.max(12, insets.top),
+            backgroundColor: colors.headerBg,
+            borderBottomColor: colors.headerBorder,
+          },
         ]}
       >
         <TouchableOpacity
-          style={styles.headerIconButton}
+          style={[
+            styles.headerIconButton,
+            { backgroundColor: colors.surfaceElevated },
+          ]}
           onPress={() => router.back()}
           hitSlop={8}
           activeOpacity={0.7}
         >
-          <Text style={styles.headerIconText}>←</Text>
+          <Text style={[styles.headerIconText, { color: colors.textPrimary }]}>
+            ←
+          </Text>
         </TouchableOpacity>
 
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
+          <Text
+            style={[styles.headerTitle, { color: colors.textPrimary }]}
+            numberOfLines={1}
+          >
             Expression Editor
           </Text>
-          <Text style={styles.headerSubtitle} numberOfLines={1}>
+          <Text
+            style={[styles.headerSubtitle, { color: colors.textSecondary }]}
+            numberOfLines={1}
+          >
             {activeSwapCount > 0
               ? `${activeSwapCount} face ${activeSwapCount === 1 ? "swap" : "swaps"} active`
               : "Original base photo"}
@@ -168,6 +191,20 @@ export default function EditorScreen() {
         </View>
 
         <View style={styles.headerRightActions}>
+          <TouchableOpacity
+            style={[
+              styles.themeToggleButton,
+              { backgroundColor: colors.surfaceElevated },
+            ]}
+            onPress={toggleTheme}
+            hitSlop={6}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle light and dark mode"
+          >
+            <Text style={styles.themeToggleText}>{isDark ? "☀️" : "🌙"}</Text>
+          </TouchableOpacity>
+
           <CompareButton
             isComparing={isComparing}
             onCompareStart={() => setIsComparing(true)}
@@ -176,7 +213,7 @@ export default function EditorScreen() {
           />
 
           <TouchableOpacity
-            style={styles.exportButton}
+            style={[styles.exportButton, { backgroundColor: colors.accent }]}
             onPress={handleStartExport}
             activeOpacity={0.8}
           >
@@ -220,9 +257,19 @@ export default function EditorScreen() {
           onClose={() => setSelectedPersonId(null)}
         />
       ) : (
-        <View style={styles.hintDock}>
+        <View
+          style={[
+            styles.hintDock,
+            {
+              backgroundColor: colors.surface,
+              borderTopColor: colors.cardBorder,
+            },
+          ]}
+        >
           <Text style={styles.hintDockIcon}>{showOutlines ? "👆" : "👁️"}</Text>
-          <Text style={styles.hintDockText}>
+          <Text
+            style={[styles.hintDockText, { color: colors.textSecondary }]}
+          >
             {showOutlines
               ? "Tap any highlighted face to pick an alternate expression"
               : "Outlines hidden for inspection. Tap Outlines On above to select faces"}
@@ -237,6 +284,7 @@ export default function EditorScreen() {
         progress={exportProgress}
         stageText={exportStageText}
         errorMessage={exportErrorMessage}
+        assetUri={exportedAssetUri}
         onClose={() => setExportModalVisible(false)}
       />
     </View>
@@ -287,6 +335,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+  },
+  themeToggleButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  themeToggleText: {
+    fontSize: 16,
   },
   exportButton: {
     backgroundColor: "#0284c7",

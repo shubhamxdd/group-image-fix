@@ -35,6 +35,7 @@ export interface DetectedFace {
   cropUri?: string;
   meshPoints?: NormalizedPoint[];
   contourPoints?: NormalizedPoint[];
+  excluded?: boolean;
 }
 
 export interface Person {

@@ -14,11 +14,32 @@ import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useGalleryPicker } from "../hooks/useGalleryPicker";
 import { useSessionStore } from "../store/sessionStore";
+import { useTheme } from "../store/themeStore";
 import { Photo } from "../types/session";
+import { ImagePreviewModal } from "../components/ImagePreviewModal";
+import { FaceInspectorModal } from "../components/FaceInspectorModal";
 
 export default function Index() {
-  const { openPicker, isPicking, session, resetSession, setBasePhoto } =
-    useGalleryPicker();
+  const {
+    openPicker,
+    addMorePhotos,
+    isPicking,
+    session,
+    resetSession,
+    setBasePhoto,
+  } = useGalleryPicker();
+  const { colors, isDark, toggleTheme } = useTheme();
+
+  const [previewingPhoto, setPreviewingPhoto] = useState<{
+    photo: Photo;
+    index: number;
+  } | null>(null);
+
+  const [inspectingPhoto, setInspectingPhoto] = useState<{
+    photo: Photo;
+    index: number;
+  } | null>(null);
+
   const activeToken = useSessionStore((state) => state.activeToken);
   const clusteringThreshold = useSessionStore(
     (state) => state.clusteringThreshold
@@ -103,20 +124,74 @@ export default function Index() {
     }
 
     return (
-      <View style={styles.container}>
-        <View style={styles.headerBar}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View
+          style={[
+            styles.headerBar,
+            {
+              backgroundColor: colors.headerBg,
+              borderBottomColor: colors.headerBorder,
+            },
+          ]}
+        >
           <View>
-            <Text style={styles.headerTitle}>Burst Group Session</Text>
-            <Text style={styles.headerSubtitle}>
+            <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+              Burst Group Session
+            </Text>
+            <Text
+              style={[styles.headerSubtitle, { color: colors.textSecondary }]}
+            >
               {session.photos.length} photos loaded
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            onPress={() => resetSession()}
-          >
-            <Text style={styles.secondaryButtonText}>Reset</Text>
-          </TouchableOpacity>
+          <View style={styles.headerRightActions}>
+            <TouchableOpacity
+              style={[
+                styles.headerIconButton,
+                { backgroundColor: colors.surfaceElevated },
+              ]}
+              onPress={toggleTheme}
+              hitSlop={6}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Toggle light and dark mode"
+            >
+              <Text style={styles.headerIconButtonText}>
+                {isDark ? "☀️" : "🌙"}
+              </Text>
+            </TouchableOpacity>
+
+            {session.photos.length < 10 && (
+              <TouchableOpacity
+                style={[
+                  styles.addPhotosButton,
+                  { backgroundColor: colors.accent },
+                ]}
+                onPress={addMorePhotos}
+                disabled={isPicking || isDetecting}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.addPhotosButtonText}>+ Add</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={[
+                styles.secondaryButton,
+                { backgroundColor: colors.surfaceElevated },
+              ]}
+              onPress={() => resetSession()}
+            >
+              <Text
+                style={[
+                  styles.secondaryButtonText,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Reset
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {isDetecting && (
@@ -419,12 +494,20 @@ export default function Index() {
             const photoFaces = faceCountByPhoto.get(item.id) || 0;
 
             return (
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => setBasePhoto(item.id)}
-                style={[styles.card, isBase && styles.cardActive]}
+              <View
+                style={[
+                  styles.card,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: isBase ? colors.accent : colors.cardBorder,
+                  },
+                ]}
               >
-                <View style={styles.imageWrapper}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => setBasePhoto(item.id)}
+                  style={styles.imageWrapper}
+                >
                   <Image
                     source={{ uri: item.proxyUri }}
                     style={styles.thumbnail}
@@ -432,31 +515,117 @@ export default function Index() {
                     transition={200}
                   />
                   {photoFaces > 0 && (
-                    <View style={styles.faceCountBadge}>
-                      <Text style={styles.faceCountBadgeText}>
+                    <View
+                      style={[
+                        styles.faceCountBadge,
+                        { backgroundColor: colors.pillBg },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.faceCountBadgeText,
+                          { color: colors.accentLight },
+                        ]}
+                      >
                         👥 {photoFaces}
                       </Text>
                     </View>
                   )}
+                </TouchableOpacity>
+
+                {/* 2 Action Buttons on the Image Card */}
+                <View
+                  style={[
+                    styles.cardActionRow,
+                    {
+                      backgroundColor: colors.surfaceElevated,
+                      borderTopColor: colors.cardBorder,
+                    },
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={[
+                      styles.cardActionButton,
+                      { backgroundColor: colors.surface },
+                    ]}
+                    onPress={() => setPreviewingPhoto({ photo: item, index })}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.cardActionIcon}>🔍</Text>
+                    <Text
+                      style={[
+                        styles.cardActionText,
+                        { color: colors.textPrimary },
+                      ]}
+                    >
+                      Preview
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.cardActionButton,
+                      {
+                        backgroundColor:
+                          photoFaces > 0
+                            ? colors.surface
+                            : colors.surfaceElevated,
+                        opacity: photoFaces > 0 || isDone ? 1 : 0.45,
+                      },
+                    ]}
+                    onPress={() => setInspectingPhoto({ photo: item, index })}
+                    activeOpacity={0.7}
+                    disabled={photoFaces === 0 && !isDone}
+                  >
+                    <Text style={styles.cardActionIcon}>👤</Text>
+                    <Text
+                      style={[
+                        styles.cardActionText,
+                        {
+                          color:
+                            photoFaces > 0
+                              ? colors.accent
+                              : colors.textSecondary,
+                        },
+                      ]}
+                    >
+                      {photoFaces > 0 ? `${photoFaces} Faces` : "Faces"}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
 
-                <View style={styles.cardFooter}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => setBasePhoto(item.id)}
+                  style={styles.cardFooter}
+                >
                   <View style={styles.badgeRow}>
-                    <Text style={styles.photoIndexText}>Photo #{index + 1}</Text>
+                    <Text
+                      style={[
+                        styles.photoIndexText,
+                        { color: colors.textPrimary },
+                      ]}
+                    >
+                      Photo #{index + 1}
+                    </Text>
                     {isBase && (
-                      <View style={styles.baseBadge}>
+                      <View
+                        style={[
+                          styles.baseBadge,
+                          { backgroundColor: colors.accent },
+                        ]}
+                      >
                         <Text style={styles.baseBadgeText}>Base</Text>
                       </View>
                     )}
                   </View>
-                  <Text style={styles.metaText}>
+                  <Text
+                    style={[styles.metaText, { color: colors.textSecondary }]}
+                  >
                     {item.width} x {item.height}
                   </Text>
-                  <Text style={styles.metaSubText}>
-                    Proxy: {item.proxyWidth} x {item.proxyHeight}
-                  </Text>
-                </View>
-              </TouchableOpacity>
+                </TouchableOpacity>
+              </View>
             );
           }}
         />
@@ -543,36 +712,107 @@ export default function Index() {
             </View>
           </View>
         </Modal>
+
+        {/* Fullscreen Zoomable Image Preview Modal */}
+        <ImagePreviewModal
+          photo={previewingPhoto?.photo ?? null}
+          photoIndex={previewingPhoto?.index}
+          totalPhotos={session.photos.length}
+          visible={!!previewingPhoto}
+          onClose={() => setPreviewingPhoto(null)}
+        />
+
+        {/* Interactive Face Inspector & Highlight Modal */}
+        <FaceInspectorModal
+          photo={inspectingPhoto?.photo ?? null}
+          photoIndex={inspectingPhoto?.index}
+          totalPhotos={session.photos.length}
+          visible={!!inspectingPhoto}
+          onClose={() => setInspectingPhoto(null)}
+        />
       </View>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.idleScrollContent}>
+    <ScrollView
+      contentContainerStyle={[
+        styles.idleScrollContent,
+        { backgroundColor: colors.background },
+      ]}
+    >
+      <View style={styles.idleHeaderRow}>
+        <TouchableOpacity
+          style={[
+            styles.headerIconButton,
+            { backgroundColor: colors.surfaceElevated },
+          ]}
+          onPress={toggleTheme}
+          hitSlop={6}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Toggle light and dark mode"
+        >
+          <Text style={styles.headerIconButtonText}>
+            {isDark ? "☀️" : "🌙"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.heroSection}>
-        <View style={styles.iconPlaceholder}>
+        <View
+          style={[
+            styles.iconPlaceholder,
+            { backgroundColor: colors.surfaceElevated },
+          ]}
+        >
           <Text style={styles.iconSymbol}>👥</Text>
         </View>
-        <Text style={styles.heroTitle}>Group Photo Expression Fixer</Text>
-        <Text style={styles.heroSubtitle}>
+        <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>
+          Group Photo Expression Fixer
+        </Text>
+        <Text style={[styles.heroSubtitle, { color: colors.textSecondary }]}>
           Fix blinking eyes and awkward faces across burst shots. Select 2 to 10
           burst photos of the same group to blend the best expressions.
         </Text>
       </View>
 
-      <View style={styles.cardContainer}>
+      <View
+        style={[
+          styles.cardContainer,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.cardBorder,
+          },
+        ]}
+      >
         <View style={styles.featureItem}>
           <Text style={styles.featureBullet}>🔒</Text>
           <View style={styles.featureTextWrapper}>
-            <Text style={styles.featureHeadline}>100% On Device & Private</Text>
-            <Text style={styles.featureBody}>
+            <Text
+              style={[
+                styles.featureHeadline,
+                { color: colors.textPrimary },
+              ]}
+            >
+              100% On Device & Private
+            </Text>
+            <Text
+              style={[styles.featureBody, { color: colors.textSecondary }]}
+            >
               No photos or faces are ever uploaded to cloud servers.
             </Text>
           </View>
         </View>
 
         <TouchableOpacity
-          style={styles.resolutionToggleCard}
+          style={[
+            styles.resolutionToggleCard,
+            {
+              backgroundColor: colors.surfaceElevated,
+              borderColor: colors.cardBorder,
+            },
+          ]}
           onPress={() => setProcessAtFullResolution(!processAtFullResolution)}
           activeOpacity={0.8}
         >
@@ -580,12 +820,19 @@ export default function Index() {
             {processAtFullResolution ? "💎" : "⚡"}
           </Text>
           <View style={styles.featureTextWrapper}>
-            <Text style={styles.featureHeadline}>
+            <Text
+              style={[
+                styles.featureHeadline,
+                { color: colors.textPrimary },
+              ]}
+            >
               {processAtFullResolution
                 ? "Full Resolution Mode: Active"
                 : "1080p Proxy Mode: Active"}
             </Text>
-            <Text style={styles.featureBody}>
+            <Text
+              style={[styles.featureBody, { color: colors.textSecondary }]}
+            >
               {processAtFullResolution
                 ? "Processes photos at full original camera resolution with zero downscaling."
                 : "Downscales working proxies to 1080p for lower memory and faster preview."}
@@ -605,13 +852,13 @@ export default function Index() {
       </View>
 
       <TouchableOpacity
-        style={styles.primaryButton}
+        style={[styles.primaryButton, { backgroundColor: colors.accent }]}
         onPress={openPicker}
         activeOpacity={0.8}
       >
         <Text style={styles.primaryButtonText}>Select Group Photos</Text>
       </TouchableOpacity>
-      <Text style={styles.helperNotice}>
+      <Text style={[styles.helperNotice, { color: colors.textMuted }]}>
         Requires 2 to 10 photos from the same burst or scene.
       </Text>
     </ScrollView>
@@ -1115,6 +1362,62 @@ const styles = StyleSheet.create({
     color: "#38bdf8",
     fontSize: 11,
     fontWeight: "600",
+  },
+  cardActionRow: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    padding: 4,
+    gap: 4,
+  },
+  cardActionButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: 6,
+    gap: 3,
+  },
+  cardActionIcon: {
+    fontSize: 11,
+  },
+  cardActionText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  headerRightActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  headerIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerIconButtonText: {
+    fontSize: 16,
+  },
+  addPhotosButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addPhotosButtonText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  idleHeaderRow: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginBottom: 8,
   },
   cardFooter: {
     padding: 8,

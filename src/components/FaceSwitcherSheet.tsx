@@ -14,6 +14,7 @@ import { DetectedFace, Person } from "../types/detection";
 import { Photo } from "../types/session";
 import { FaceSwapSelection } from "../types/blend";
 import { getOrGenerateFaceCropUri } from "../services/faceCropService";
+import { useTheme } from "../store/themeStore";
 
 interface FaceSwitcherSheetProps {
   person: Person;
@@ -43,6 +44,7 @@ export function FaceSwitcherSheet({
   const [cropUris, setCropUris] = useState<Record<string, string>>({});
   const [isRenaming, setIsRenaming] = useState(false);
   const [nameInput, setNameInput] = useState(person.label);
+  const { colors } = useTheme();
 
   const photoIndexMap = useMemo(
     () => new Map<string, number>(photos.map((p, idx) => [p.id, idx + 1])),
@@ -95,7 +97,15 @@ export function FaceSwitcherSheet({
   }
 
   return (
-    <View style={styles.sheetContainer}>
+    <View
+      style={[
+        styles.sheetContainer,
+        {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.headerBorder,
+        },
+      ]}
+    >
       <View style={styles.headerRow}>
         <View style={styles.titleWrapper}>
           <TouchableOpacity
@@ -108,12 +118,14 @@ export function FaceSwitcherSheet({
             accessibilityRole="button"
             accessibilityLabel={`Rename ${person.label}`}
           >
-            <Text style={styles.personTitle}>👤 {person.label}</Text>
+            <Text style={[styles.personTitle, { color: colors.textPrimary }]}>
+              👤 {person.label}
+            </Text>
             <View style={styles.editBadge}>
               <Text style={styles.editBadgeText}>✏️</Text>
             </View>
           </TouchableOpacity>
-          <Text style={styles.subTitle}>
+          <Text style={[styles.subTitle, { color: colors.textSecondary }]}>
             {faceList.length} shots
           </Text>
         </View>
@@ -121,22 +133,32 @@ export function FaceSwitcherSheet({
         <View style={styles.actionsRow}>
           {hasActiveSwap && (
             <TouchableOpacity
-              style={styles.revertButton}
+              style={[
+                styles.revertButton,
+                { backgroundColor: colors.surfaceElevated },
+              ]}
               onPress={onRevertFace}
               activeOpacity={0.7}
               disabled={isBlending}
             >
-              <Text style={styles.revertButtonText}>↺ Revert</Text>
+              <Text style={[styles.revertButtonText, { color: colors.textPrimary }]}>
+                ↺ Revert
+              </Text>
             </TouchableOpacity>
           )}
 
           <TouchableOpacity
-            style={styles.closeButton}
+            style={[
+              styles.closeButton,
+              { backgroundColor: colors.surfaceElevated },
+            ]}
             onPress={onClose}
             hitSlop={8}
             activeOpacity={0.7}
           >
-            <Text style={styles.closeButtonText}>✕</Text>
+            <Text style={[styles.closeButtonText, { color: colors.textPrimary }]}>
+              ✕
+            </Text>
           </TouchableOpacity>
         </View>
       </View>

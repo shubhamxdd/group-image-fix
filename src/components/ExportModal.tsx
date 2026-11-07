@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Linking,
 } from "react-native";
+import { openImageInGallery } from "../utils/galleryOpener";
 
 export type ExportStatus =
   | "idle"
@@ -22,6 +23,7 @@ interface ExportModalProps {
   progress: number;
   stageText?: string;
   errorMessage?: string | null;
+  assetUri?: string | null;
   onClose: () => void;
 }
 
@@ -31,6 +33,7 @@ export function ExportModal({
   progress,
   stageText = "Preparing export...",
   errorMessage,
+  assetUri,
   onClose,
 }: ExportModalProps) {
   if (!visible) return null;
@@ -92,13 +95,23 @@ export function ExportModal({
                 full camera resolution.
               </Text>
 
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={onClose}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.primaryButtonText}>Done</Text>
-              </TouchableOpacity>
+              <View style={styles.buttonRow}>
+                <TouchableOpacity
+                  style={styles.galleryButton}
+                  onPress={() => openImageInGallery(assetUri)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.galleryButtonText}>🖼️ Open in Gallery</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.doneButton}
+                  onPress={onClose}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.doneButtonText}>Done</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
@@ -266,6 +279,34 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   settingsButtonText: {
+    color: "#f8fafc",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  galleryButton: {
+    backgroundColor: "#0284c7",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1.4,
+  },
+  galleryButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  doneButton: {
+    backgroundColor: "#334155",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 0.8,
+  },
+  doneButtonText: {
     color: "#f8fafc",
     fontSize: 14,
     fontWeight: "600",

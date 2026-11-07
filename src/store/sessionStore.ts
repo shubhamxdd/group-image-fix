@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import * as FileSystem from "expo-file-system/legacy";
-import { Session } from "../types/session";
+import { Session, Photo } from "../types/session";
 import { DetectedFace, Person, DetectionProgress } from "../types/detection";
 import { BlendParameters, BlendResult, FaceSwapSelection } from "../types/blend";
 import {
@@ -48,6 +48,8 @@ interface SessionState {
   setDetectionError: (error: string, token: number) => boolean;
   setClusteringThreshold: (threshold: number) => void;
   reclusterPersons: (threshold?: number) => void;
+  toggleFaceExcluded: (faceId: string) => void;
+  addPhotosToSession: (newPhotos: Photo[]) => void;
   setFaceSwap: (
     personId: string,
     donorFaceId: string,
@@ -233,24 +235,125 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       return;
     }
 
-    const faceList = Object.values(current.detectedFaces);
-    if (faceList.length === 0) {
-      set({ clusteringThreshold: targetThreshold });
+    const activeFaces = Object.values(current.detectedFaces).filter(
+      (f) => !f.excluded
+    );
+    if (activeFaces.length === 0) {
+      set({
+        clusteringThreshold: targetThreshold,
+        session: {
+          ...current,
+          persons: [],
+        },
+      });
       return;
     }
 
     const { persons, updatedFaces } = clusterFacesIntoPersons(
-      faceList,
+      activeFaces,
       current.basePhotoId,
       { similarityThreshold: targetThreshold }
     );
+
+    const mergedFaces: Record<string, DetectedFace> = {
+      ...current.detectedFaces,
+    };
+    for (const [id, f] of Object.entries(updatedFaces)) {
+      mergedFaces[id] = f;
+    }
+    for (const f of Object.values(mergedFaces)) {
+      if (f.excluded) {
+        f.personId = null;
+      }
+    }
 
     set({
       clusteringThreshold: targetThreshold,
       session: {
         ...current,
-        detectedFaces: updatedFaces,
+        detectedFaces: mergedFaces,
         persons,
+      },
+    });
+  },
+
+  toggleFaceExcluded: (faceId: string) => {
+    const current = get().session;
+    if (!current || !current.detectedFaces[faceId]) return;
+
+    const face = current.detectedFaces[faceId];
+    const newExcluded = !face.excluded;
+    const updatedFace: DetectedFace = {
+      ...face,
+      excluded: newExcluded,
+      personId: newExcluded ? null : face.personId,
+    };
+
+    const updatedDetectedFaces: Record<string, DetectedFace> = {
+      ...current.detectedFaces,
+      [faceId]: updatedFace,
+    };
+
+    // If face was part of an active swap, remove that swap
+    const updatedSwaps = { ...current.swaps };
+    if (newExcluded && face.personId && updatedSwaps[face.personId]) {
+      delete updatedSwaps[face.personId];
+    }
+
+    const activeFaces = Object.values(updatedDetectedFaces).filter(
+      (f) => !f.excluded
+    );
+    const { persons, updatedFaces } = clusterFacesIntoPersons(
+      activeFaces,
+      current.basePhotoId,
+      { similarityThreshold: get().clusteringThreshold }
+    );
+
+    const mergedFaces: Record<string, DetectedFace> = {
+      ...updatedDetectedFaces,
+    };
+    for (const [id, f] of Object.entries(updatedFaces)) {
+      mergedFaces[id] = f;
+    }
+    for (const f of Object.values(mergedFaces)) {
+      if (f.excluded) {
+        f.personId = null;
+      }
+    }
+
+    set({
+      session: {
+        ...current,
+        detectedFaces: mergedFaces,
+        persons,
+        swaps: updatedSwaps,
+      },
+    });
+  },
+
+  addPhotosToSession: (newPhotos: Photo[]) => {
+    const current = get().session;
+    if (!current) return;
+
+    const existingIds = new Set(current.photos.map((p) => p.id));
+    const uniqueNew = newPhotos.filter((p) => !existingIds.has(p.id));
+    if (uniqueNew.length === 0) return;
+
+    const combined = [...current.photos, ...uniqueNew];
+    const wasDone = current.detectionProgress.stage === "done";
+
+    set({
+      session: {
+        ...current,
+        photos: combined,
+        detectionProgress: wasDone
+          ? {
+              stage: "idle",
+              currentPhotoIndex: 0,
+              totalPhotos: combined.length,
+              errorMessage: null,
+            }
+          : current.detectionProgress,
       },
     });
   },

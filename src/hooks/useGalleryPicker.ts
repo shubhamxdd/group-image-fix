@@ -14,6 +14,55 @@ export function useGalleryPicker() {
   const session = useSessionStore((state) => state.session);
   const resetSession = useSessionStore((state) => state.resetSession);
   const setBasePhoto = useSessionStore((state) => state.setBasePhoto);
+  const addPhotosToSession = useSessionStore(
+    (state) => state.addPhotosToSession
+  );
+
+  const addMorePhotos = useCallback(async () => {
+    const currentSession = useSessionStore.getState().session;
+    if (!currentSession) return;
+
+    const remainingSlots = 10 - currentSession.photos.length;
+    if (remainingSlots <= 0) {
+      Alert.alert(
+        "Limit Reached",
+        "A maximum of 10 photos is supported in a single burst session."
+      );
+      return;
+    }
+
+    try {
+      setIsPicking(true);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsMultipleSelection: true,
+        selectionLimit: remainingSlots,
+        quality: 1,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        setIsPicking(false);
+        return;
+      }
+
+      const assetsToProcess = result.assets.slice(0, remainingSlots);
+      const fullRes = useSessionStore.getState().processAtFullResolution;
+      const newPhotos = await ingestPhotos(
+        currentSession.id,
+        assetsToProcess,
+        fullRes
+      );
+
+      addPhotosToSession(newPhotos);
+    } catch (err: any) {
+      Alert.alert(
+        "Import Error",
+        err?.message || "Failed to add photos to session."
+      );
+    } finally {
+      setIsPicking(false);
+    }
+  }, [addPhotosToSession]);
 
   const openPicker = useCallback(async () => {
     try {
@@ -94,6 +143,7 @@ export function useGalleryPicker() {
 
   return {
     openPicker,
+    addMorePhotos,
     isPicking,
     session,
     resetSession,
