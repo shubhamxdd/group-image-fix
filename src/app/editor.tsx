@@ -157,8 +157,10 @@ export default function EditorScreen() {
         </TouchableOpacity>
 
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Expression Editor</Text>
-          <Text style={styles.headerSubtitle}>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            Expression Editor
+          </Text>
+          <Text style={styles.headerSubtitle} numberOfLines={1}>
             {activeSwapCount > 0
               ? `${activeSwapCount} face ${activeSwapCount === 1 ? "swap" : "swaps"} active`
               : "Original base photo"}
@@ -166,44 +168,6 @@ export default function EditorScreen() {
         </View>
 
         <View style={styles.headerRightActions}>
-          <TouchableOpacity
-            style={[styles.historyButton, !canUndo && styles.historyButtonDisabled]}
-            onPress={undoSwap}
-            disabled={!canUndo}
-            hitSlop={6}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Undo last face swap"
-          >
-            <Text
-              style={[
-                styles.historyButtonIcon,
-                !canUndo && styles.historyButtonIconDisabled,
-              ]}
-            >
-              ↶
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.historyButton, !canRedo && styles.historyButtonDisabled]}
-            onPress={redoSwap}
-            disabled={!canRedo}
-            hitSlop={6}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Redo face swap"
-          >
-            <Text
-              style={[
-                styles.historyButtonIcon,
-                !canRedo && styles.historyButtonIconDisabled,
-              ]}
-            >
-              ↷
-            </Text>
-          </TouchableOpacity>
-
           <CompareButton
             isComparing={isComparing}
             onCompareStart={() => setIsComparing(true)}
@@ -232,6 +196,10 @@ export default function EditorScreen() {
           isComparing={isComparing}
           showOutlines={showOutlines}
           onToggleOutlines={() => setShowOutlines((prev) => !prev)}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={undoSwap}
+          onRedo={redoSwap}
           activeSwaps={activeSwaps}
           onSelectPerson={(personId) => setSelectedPersonId(personId)}
         />
@@ -301,11 +269,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   headerTitleContainer: {
-    alignItems: "center",
+    flex: 1,
+    marginHorizontal: 12,
+    alignItems: "flex-start",
   },
   headerTitle: {
     color: "#f8fafc",
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
   },
   headerSubtitle: {
@@ -316,30 +286,7 @@ const styles = StyleSheet.create({
   headerRightActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-  },
-  historyButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: "rgba(30, 41, 59, 0.8)",
-    borderWidth: 1,
-    borderColor: "rgba(148, 163, 184, 0.25)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  historyButtonDisabled: {
-    opacity: 0.35,
-    backgroundColor: "rgba(30, 41, 59, 0.3)",
-    borderColor: "transparent",
-  },
-  historyButtonIcon: {
-    color: "#f8fafc",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  historyButtonIconDisabled: {
-    color: "#64748b",
+    gap: 8,
   },
   exportButton: {
     backgroundColor: "#0284c7",

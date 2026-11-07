@@ -22,6 +22,10 @@ interface CompositeCanvasProps {
   isComparing: boolean;
   showOutlines: boolean;
   onToggleOutlines: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
   activeSwaps?: Record<string, any>;
   onSelectPerson: (personId: string) => void;
 }
@@ -35,6 +39,10 @@ export function CompositeCanvas({
   isComparing,
   showOutlines,
   onToggleOutlines,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
   activeSwaps = {},
   onSelectPerson,
 }: CompositeCanvasProps) {
@@ -353,32 +361,84 @@ export function CompositeCanvas({
         </Animated.View>
       )}
 
-      {/* Floating Outline Toggle Pill on Top Right */}
-      <TouchableOpacity
-        style={[
-          styles.floatingPill,
-          styles.outlineTogglePill,
-          !showOutlines && styles.outlineTogglePillOff,
-        ]}
-        onPress={onToggleOutlines}
-        activeOpacity={0.8}
-        accessibilityRole="button"
-        accessibilityLabel={
-          showOutlines ? "Hide face outlines" : "Show face outlines"
-        }
-      >
-        <Text style={styles.floatingPillIcon}>
-          {showOutlines ? "👁️" : "🙈"}
-        </Text>
-        <Text
+      {/* Top Right Controls Group: Undo, Redo, and Outline Toggle */}
+      <View style={styles.topRightControls}>
+        {(onUndo || onRedo) && (
+          <View style={styles.historyPillGroup}>
+            <TouchableOpacity
+              style={[
+                styles.floatingIconPill,
+                !canUndo && styles.floatingPillDisabled,
+              ]}
+              onPress={onUndo}
+              disabled={!canUndo}
+              hitSlop={8}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Undo last face swap"
+            >
+              <Text
+                style={[
+                  styles.floatingIconText,
+                  !canUndo && styles.floatingIconTextDisabled,
+                ]}
+              >
+                ↶
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.historyDivider} />
+
+            <TouchableOpacity
+              style={[
+                styles.floatingIconPill,
+                !canRedo && styles.floatingPillDisabled,
+              ]}
+              onPress={onRedo}
+              disabled={!canRedo}
+              hitSlop={8}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Redo face swap"
+            >
+              <Text
+                style={[
+                  styles.floatingIconText,
+                  !canRedo && styles.floatingIconTextDisabled,
+                ]}
+              >
+                ↷
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <TouchableOpacity
           style={[
-            styles.floatingPillText,
-            !showOutlines && styles.floatingPillTextOff,
+            styles.floatingPill,
+            styles.outlineTogglePill,
+            !showOutlines && styles.outlineTogglePillOff,
           ]}
+          onPress={onToggleOutlines}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel={
+            showOutlines ? "Hide face outlines" : "Show face outlines"
+          }
         >
-          {showOutlines ? "Outlines On" : "Outlines Hidden"}
-        </Text>
-      </TouchableOpacity>
+          <Text style={styles.floatingPillIcon}>
+            {showOutlines ? "👁️" : "🙈"}
+          </Text>
+          <Text
+            style={[
+              styles.floatingPillText,
+              !showOutlines && styles.floatingPillTextOff,
+            ]}
+          >
+            {showOutlines ? "Outlines On" : "Outlines Hidden"}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Floating Zoom Level and Reset Pill on Top Left */}
       {zoomDisplay > 1.05 && (
@@ -459,8 +519,54 @@ const styles = StyleSheet.create({
   swapSparkleText: {
     fontSize: 9,
   },
-  floatingPill: {
+  topRightControls: {
     position: "absolute",
+    top: 14,
+    right: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  historyPillGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 20,
+    backgroundColor: "rgba(15, 23, 42, 0.85)",
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.3)",
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  floatingIconPill: {
+    width: 30,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+  },
+  floatingPillDisabled: {
+    opacity: 0.35,
+  },
+  floatingIconText: {
+    color: "#f8fafc",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  floatingIconTextDisabled: {
+    color: "#64748b",
+  },
+  historyDivider: {
+    width: 1,
+    height: 14,
+    backgroundColor: "rgba(148, 163, 184, 0.25)",
+    marginHorizontal: 1,
+  },
+  floatingPill: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
@@ -475,8 +581,6 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   outlineTogglePill: {
-    top: 14,
-    right: 14,
     borderColor: "rgba(56, 189, 248, 0.4)",
   },
   outlineTogglePillOff: {
@@ -484,6 +588,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.75)",
   },
   zoomResetPill: {
+    position: "absolute",
     top: 14,
     left: 14,
     borderColor: "rgba(251, 191, 36, 0.45)",
