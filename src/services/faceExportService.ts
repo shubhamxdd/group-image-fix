@@ -98,6 +98,7 @@ export async function exportFullResolutionComposite(
       BlendMode,
       ImageFormat,
       BlurStyle,
+      TileMode,
     } = await import("@shopify/react-native-skia");
 
     // Load full resolution original base photo
@@ -196,10 +197,16 @@ export async function exportFullResolutionComposite(
         baseFace,
         origW,
         origH,
-        swap.blendParams.featherRadius ?? 0.35
+        swap.blendParams.featherRadius ?? 0.30
       );
 
-      const donorPaint = Skia.Paint();
+      const minRadius = Math.min(maskGeom.radiusX, maskGeom.radiusY);
+      // Tight feather for high frequency facial features (pores, eyelashes, smile, teeth)
+      const sharpSigma = Math.max(3, minRadius * 0.035);
+      // Wide feather for low frequency ambient lighting and skin tone transition
+      const wideSigma = Math.max(12, minRadius * 0.16);
+
+      let colorFilter: any = null;
       if (swap.blendParams.colorTransferEnabled) {
         const colorMatrix = await computeSkinToneColorMatrix(
           donorOriginal,
@@ -208,59 +215,48 @@ export async function exportFullResolutionComposite(
           baseFace
         );
         if (colorMatrix) {
-          donorPaint.setColorFilter(Skia.ColorFilter.MakeMatrix(colorMatrix));
+          colorFilter = Skia.ColorFilter.MakeMatrix(colorMatrix);
         }
       }
 
-      // Render isolated face swap onto a clean offscreen layer
-      canvas.saveLayer();
-
-      // Step 1: Draw feathered blend mask into transparent layer
-      const maskPaint = Skia.Paint();
-      maskPaint.setAntiAlias(true);
-      maskPaint.setColor(Skia.Color("#ffffff"));
-
-      let usedContourMask = false;
+      // Build smooth anatomical path from inner face core contour
+      let contourPath: any = null;
       if (baseFace.contourPoints && baseFace.contourPoints.length >= 3) {
-        const contourPath = await createFaceContourSkPath(
+        contourPath = await createFaceContourSkPath(
           baseFace.contourPoints,
           origW,
           origH
         );
-        if (contourPath) {
-          const blurSigma = Math.max(
-            8,
-            Math.min(maskGeom.radiusX, maskGeom.radiusY) * (swap.blendParams.featherRadius ?? 0.35) * 0.5
-          );
-          maskPaint.setMaskFilter(
-            Skia.MaskFilter.MakeBlur(BlurStyle.Normal, blurSigma, true)
-          );
-          canvas.drawPath(contourPath, maskPaint);
-          usedContourMask = true;
-        }
       }
 
-      if (!usedContourMask) {
-        if (maskEffect) {
+      // Helper function to draw mask geometry with a specified blur radius
+      const drawMaskIntoExportCanvas = (blurRadius: number) => {
+        const maskPaint = Skia.Paint();
+        maskPaint.setAntiAlias(true);
+        maskPaint.setColor(Skia.Color("#ffffff"));
+
+        if (contourPath) {
+          maskPaint.setMaskFilter(
+            Skia.MaskFilter.MakeBlur(BlurStyle.Normal, blurRadius, true)
+          );
+          canvas.drawPath(contourPath, maskPaint);
+        } else if (maskEffect) {
+          const effectiveFeather = Math.max(0.12, Math.min(0.40, blurRadius / minRadius));
           const maskShader = maskEffect.makeShader([
             maskGeom.centerX,
             maskGeom.centerY,
             maskGeom.radiusX,
             maskGeom.radiusY,
             maskGeom.rotationAngle,
-            maskGeom.featherRadius,
+            effectiveFeather,
           ]);
           if (maskShader) {
             maskPaint.setShader(maskShader);
             canvas.drawRect(Skia.XYWHRect(0, 0, origW, origH), maskPaint);
           }
         } else {
-          const blurSigma = Math.max(
-            8,
-            Math.min(maskGeom.radiusX, maskGeom.radiusY) * maskGeom.featherRadius * 0.6
-          );
           maskPaint.setMaskFilter(
-            Skia.MaskFilter.MakeBlur(BlurStyle.Normal, blurSigma, true)
+            Skia.MaskFilter.MakeBlur(BlurStyle.Normal, blurRadius, true)
           );
           canvas.save();
           canvas.translate(maskGeom.centerX, maskGeom.centerY);
@@ -274,16 +270,48 @@ export async function exportFullResolutionComposite(
           canvas.drawOval(ovalRect, maskPaint);
           canvas.restore();
         }
-      }
+      };
 
-      // Step 2: Draw transformed donor face with SrcIn so ONLY pixels inside the mask are retained
-      donorPaint.setBlendMode(BlendMode.SrcIn);
+      // PASS 1: Low-frequency ambient lighting & skin tone transition
+      // Wide feathered mask + low-pass filtered donor image
+      // Blends lighting seamlessly into surrounding base skin with zero visible edge line
+      // and zero ghosted pores or duplicate hairs.
+      canvas.saveLayer();
+      drawMaskIntoExportCanvas(wideSigma);
+
+      const lowFreqPaint = Skia.Paint();
+      lowFreqPaint.setAntiAlias(true);
+      lowFreqPaint.setBlendMode(BlendMode.SrcIn);
+      if (colorFilter) {
+        lowFreqPaint.setColorFilter(colorFilter);
+      }
+      if (Skia.ImageFilter && typeof Skia.ImageFilter.MakeBlur === "function") {
+        lowFreqPaint.setImageFilter(
+          Skia.ImageFilter.MakeBlur(wideSigma * 0.45, wideSigma * 0.45, TileMode.Clamp)
+        );
+      }
       canvas.save();
       canvas.concat(skiaMatrix);
-      canvas.drawImage(donorOriginal, 0, 0, donorPaint);
+      canvas.drawImage(donorOriginal, 0, 0, lowFreqPaint);
+      canvas.restore();
       canvas.restore();
 
-      // Step 3: Composite isolated feathered face onto composite
+      // PASS 2: High-frequency expression details & texture core
+      // Tight feathered mask + native crisp donor image
+      // Transplants crisp teeth, lips, eyes, and skin pores with zero blurriness.
+      canvas.saveLayer();
+      drawMaskIntoExportCanvas(sharpSigma);
+
+      const sharpPaint = Skia.Paint();
+      sharpPaint.setAntiAlias(true);
+      sharpPaint.setBlendMode(BlendMode.SrcIn);
+      if (colorFilter) {
+        sharpPaint.setColorFilter(colorFilter);
+      }
+      canvas.save();
+      canvas.concat(skiaMatrix);
+      canvas.drawImage(donorOriginal, 0, 0, sharpPaint);
+      canvas.restore();
       canvas.restore();
     }
 

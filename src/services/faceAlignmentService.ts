@@ -231,9 +231,9 @@ export function computeBlendMaskGeometry(
   }
 
   // Inner facial ellipse: encompasses forehead below hairline, eyes, cheeks, mouth
-  const radiusX = baseFace.bounds.width * 0.44 * canvasW;
-  const radiusY = baseFace.bounds.height * 0.50 * canvasH;
-  const featherRadius = Math.max(0.15, Math.min(0.55, featherRadiusSetting));
+  const radiusX = baseFace.bounds.width * 0.40 * canvasW;
+  const radiusY = baseFace.bounds.height * 0.44 * canvasH;
+  const featherRadius = Math.max(0.12, Math.min(0.40, featherRadiusSetting));
 
   return {
     centerX,

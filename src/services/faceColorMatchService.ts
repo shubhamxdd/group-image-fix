@@ -11,41 +11,72 @@ interface ChannelStats {
 }
 
 function computeChannelStats(rgba: Uint8Array): ChannelStats | null {
-  const count = Math.floor(rgba.length / 4);
-  if (count === 0) {
+  const total = Math.floor(rgba.length / 4);
+  if (total === 0) {
     return null;
   }
 
   let sumR = 0;
   let sumG = 0;
   let sumB = 0;
+  let validCount = 0;
 
+  // Filter out specular highlights and deep shadow cavities (nostrils, pupil)
   for (let i = 0; i < rgba.length; i += 4) {
-    sumR += rgba[i];
-    sumG += rgba[i + 1];
-    sumB += rgba[i + 2];
+    const r = rgba[i];
+    const g = rgba[i + 1];
+    const b = rgba[i + 2];
+    const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+
+    if (luma >= 25 && luma <= 242) {
+      sumR += r;
+      sumG += g;
+      sumB += b;
+      validCount++;
+    }
   }
 
-  const meanR = sumR / count;
-  const meanG = sumG / count;
-  const meanB = sumB / count;
+  // Fallback to all pixels if extreme lighting filtered everything
+  if (validCount < 16) {
+    validCount = 0;
+    sumR = 0;
+    sumG = 0;
+    sumB = 0;
+    for (let i = 0; i < rgba.length; i += 4) {
+      sumR += rgba[i];
+      sumG += rgba[i + 1];
+      sumB += rgba[i + 2];
+      validCount++;
+    }
+  }
+
+  const meanR = sumR / validCount;
+  const meanG = sumG / validCount;
+  const meanB = sumB / validCount;
 
   let sqR = 0;
   let sqG = 0;
   let sqB = 0;
 
   for (let i = 0; i < rgba.length; i += 4) {
-    const dR = rgba[i] - meanR;
-    const dG = rgba[i + 1] - meanG;
-    const dB = rgba[i + 2] - meanB;
-    sqR += dR * dR;
-    sqG += dG * dG;
-    sqB += dB * dB;
+    const r = rgba[i];
+    const g = rgba[i + 1];
+    const b = rgba[i + 2];
+    const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+
+    if (validCount < total || (luma >= 25 && luma <= 242)) {
+      const dR = r - meanR;
+      const dG = g - meanG;
+      const dB = b - meanB;
+      sqR += dR * dR;
+      sqG += dG * dG;
+      sqB += dB * dB;
+    }
   }
 
-  const stdR = Math.max(1.0, Math.sqrt(sqR / count));
-  const stdG = Math.max(1.0, Math.sqrt(sqG / count));
-  const stdB = Math.max(1.0, Math.sqrt(sqB / count));
+  const stdR = Math.max(1.0, Math.sqrt(sqR / validCount));
+  const stdG = Math.max(1.0, Math.sqrt(sqG / validCount));
+  const stdB = Math.max(1.0, Math.sqrt(sqB / validCount));
 
   return { meanR, meanG, meanB, stdR, stdG, stdB };
 }
@@ -70,16 +101,16 @@ export async function computeSkinToneColorMatrix(
     const bW = baseImage.width();
     const bH = baseImage.height();
 
-    // Sample an inner patch around nose and cheeks (avoiding background and hair)
-    const dPatchW = Math.max(8, Math.min(24, Math.round(donorFace.bounds.width * 0.22 * dW)));
-    const dPatchH = Math.max(8, Math.min(24, Math.round(donorFace.bounds.height * 0.22 * dH)));
+    // Sample a representative facial skin patch covering cheeks and bridge (32 to 160px)
+    const dPatchW = Math.max(32, Math.min(160, Math.round(donorFace.bounds.width * 0.28 * dW)));
+    const dPatchH = Math.max(32, Math.min(160, Math.round(donorFace.bounds.height * 0.28 * dH)));
     const dCenterX = Math.round((donorFace.bounds.x + donorFace.bounds.width / 2) * dW);
     const dCenterY = Math.round((donorFace.bounds.y + donorFace.bounds.height / 2) * dH);
     const dX = Math.max(0, Math.min(dW - dPatchW, Math.round(dCenterX - dPatchW / 2)));
     const dY = Math.max(0, Math.min(dH - dPatchH, Math.round(dCenterY - dPatchH / 2)));
 
-    const bPatchW = Math.max(8, Math.min(24, Math.round(baseFace.bounds.width * 0.22 * bW)));
-    const bPatchH = Math.max(8, Math.min(24, Math.round(baseFace.bounds.height * 0.22 * bH)));
+    const bPatchW = Math.max(32, Math.min(160, Math.round(baseFace.bounds.width * 0.28 * bW)));
+    const bPatchH = Math.max(32, Math.min(160, Math.round(baseFace.bounds.height * 0.28 * bH)));
     const bCenterX = Math.round((baseFace.bounds.x + baseFace.bounds.width / 2) * bW);
     const bCenterY = Math.round((baseFace.bounds.y + baseFace.bounds.height / 2) * bH);
     const bX = Math.max(0, Math.min(bW - bPatchW, Math.round(bCenterX - bPatchW / 2)));

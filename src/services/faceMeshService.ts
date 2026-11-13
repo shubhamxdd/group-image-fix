@@ -5,15 +5,23 @@ import { NormalizedPoint, NormalizedRect } from "../types/detection";
 let cachedMeshModel: TfliteModel | null = null;
 let meshModelLoadPromise: Promise<TfliteModel | null> | null = null;
 
-// Canonical 36 MediaPipe Face Mesh indices tracing the outer face oval
+// Canonical 36 MediaPipe Face Mesh indices tracing the face oval
 export const FACE_OVAL_INDICES = [
   10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
   397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
   172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109,
 ];
 
-// Forehead indices that should be pulled downward to blend on smooth forehead skin
-const FOREHEAD_INDICES = new Set([10, 338, 297, 109, 67, 332, 103]);
+// Inner face core landmarks:
+// 1. Forehead indices: pulled downward below hairline onto clear forehead skin
+const FOREHEAD_INDICES = new Set([10, 338, 297, 109, 67, 332, 103, 54, 21, 284, 251]);
+
+// 2. Chin and lower jaw indices: pulled upward to mental crease above chin tip
+// Preserves the base photo's original chin tip, jawline silhouette, neck, and clothing collar
+const CHIN_JAW_INDICES = new Set([152, 148, 176, 149, 150, 136, 172, 377, 400, 378, 379, 365, 397]);
+
+// 3. Ear and preauricular indices: pulled inward away from ears, sideburns, and hair
+const EAR_TEMPLE_INDICES = new Set([234, 127, 93, 132, 58, 454, 356, 323, 361, 288]);
 
 export interface FaceMeshResult {
   meshPoints: NormalizedPoint[];
@@ -140,9 +148,19 @@ export async function extractFaceMeshFromSkia(
 
     const meshPoints: NormalizedPoint[] = [];
 
-    // Eyebrows reference level for softening top forehead points
+    // Reference anatomical levels for inner face core boundaries:
+    // Point 168: between eyebrows (glabella)
     const browLevelY =
-      cropYNorm + (rawLandmarks[168 * 3 + 1] / 192.0) * cropHNorm; // point 168: between brows
+      cropYNorm + (rawLandmarks[168 * 3 + 1] / 192.0) * cropHNorm;
+    // Point 1: nose tip (facial horizontal midline)
+    const noseCenterX =
+      cropXNorm + (rawLandmarks[1 * 3] / 192.0) * cropWNorm;
+    // Point 18: mental crease (natural anatomical groove above chin bulb)
+    const mentalCreaseY =
+      cropYNorm + (rawLandmarks[18 * 3 + 1] / 192.0) * cropHNorm;
+    // Point 200: upper chin groove
+    const chinUpperY =
+      cropYNorm + (rawLandmarks[200 * 3 + 1] / 192.0) * cropHNorm;
 
     for (let i = 0; i < pointCount; i++) {
       const lx = rawLandmarks[i * 3] / 192.0;
@@ -151,9 +169,24 @@ export async function extractFaceMeshFromSkia(
       let normX = cropXNorm + lx * cropWNorm;
       let normY = cropYNorm + ly * cropHNorm;
 
-      // Pull forehead hairline points downward so mask blends on smooth forehead skin
+      // Inner facial core constraints:
+      // 1. Forehead: pull downward below hairline onto smooth mid-forehead skin
       if (FOREHEAD_INDICES.has(i)) {
-        normY = normY * 0.70 + browLevelY * 0.30;
+        normY = normY * 0.60 + browLevelY * 0.40;
+      }
+
+      // 2. Chin tip and lower jaw: pull upward to mental crease and upper chin groove.
+      // Keeps the base photo's original chin tip, jawline silhouette, neck, and throat 100% intact.
+      if (i === 152) {
+        // Chin tip pulled firmly up to upper chin
+        normY = normY * 0.35 + chinUpperY * 0.65;
+      } else if (CHIN_JAW_INDICES.has(i)) {
+        normY = normY * 0.65 + mentalCreaseY * 0.35;
+      }
+
+      // 3. Ears & temples: pull inward away from ears, sideburns, and hair fringe
+      if (EAR_TEMPLE_INDICES.has(i)) {
+        normX = normX * 0.80 + noseCenterX * 0.20;
       }
 
       meshPoints.push({
@@ -183,13 +216,15 @@ export async function extractFaceMeshFromSkia(
 
 /**
  * Creates an SkPath connecting the facial contour points for mask rendering.
+ * Uses closed Catmull-Rom cubic Bézier splines for an anatomically smooth, organic boundary.
  */
 export async function createFaceContourSkPath(
   contourPoints: NormalizedPoint[],
   canvasW: number,
   canvasH: number
 ): Promise<SkPath | null> {
-  if (contourPoints.length < 3) {
+  const n = contourPoints.length;
+  if (n < 3) {
     return null;
   }
 
@@ -202,9 +237,21 @@ export async function createFaceContourSkPath(
       const builder = Skia.PathBuilder.Make();
       builder.moveTo(first.x * canvasW, first.y * canvasH);
 
-      for (let i = 1; i < contourPoints.length; i++) {
-        const pt = contourPoints[i];
-        builder.lineTo(pt.x * canvasW, pt.y * canvasH);
+      // Interpolate closed loop with smooth Catmull-Rom cubic Béziers
+      for (let i = 0; i < n; i++) {
+        const pPrev = contourPoints[(i - 1 + n) % n];
+        const pCurr = contourPoints[i];
+        const pNext = contourPoints[(i + 1) % n];
+        const pNext2 = contourPoints[(i + 2) % n];
+
+        const cp1x = (pCurr.x + (pNext.x - pPrev.x) / 6) * canvasW;
+        const cp1y = (pCurr.y + (pNext.y - pPrev.y) / 6) * canvasH;
+        const cp2x = (pNext.x - (pNext2.x - pCurr.x) / 6) * canvasW;
+        const cp2y = (pNext.y - (pNext2.y - pCurr.y) / 6) * canvasH;
+        const toX = pNext.x * canvasW;
+        const toY = pNext.y * canvasH;
+
+        builder.cubicTo(cp1x, cp1y, cp2x, cp2y, toX, toY);
       }
 
       builder.close();
@@ -217,9 +264,20 @@ export async function createFaceContourSkPath(
     const path = Skia.Path.Make();
     path.moveTo(first.x * canvasW, first.y * canvasH);
 
-    for (let i = 1; i < contourPoints.length; i++) {
-      const pt = contourPoints[i];
-      path.lineTo(pt.x * canvasW, pt.y * canvasH);
+    for (let i = 0; i < n; i++) {
+      const pPrev = contourPoints[(i - 1 + n) % n];
+      const pCurr = contourPoints[i];
+      const pNext = contourPoints[(i + 1) % n];
+      const pNext2 = contourPoints[(i + 2) % n];
+
+      const cp1x = (pCurr.x + (pNext.x - pPrev.x) / 6) * canvasW;
+      const cp1y = (pCurr.y + (pNext.y - pPrev.y) / 6) * canvasH;
+      const cp2x = (pNext.x - (pNext2.x - pCurr.x) / 6) * canvasW;
+      const cp2y = (pNext.y - (pNext2.y - pCurr.y) / 6) * canvasH;
+      const toX = pNext.x * canvasW;
+      const toY = pNext.y * canvasH;
+
+      path.cubicTo(cp1x, cp1y, cp2x, cp2y, toX, toY);
     }
 
     path.close();
